@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from collections import Counter
 import unicodedata
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.rag import RagChunk, RagSource
@@ -72,9 +72,8 @@ class RetrievalService:
                 .options(joinedload(RagChunk.source))
                 .join(RagSource)
                 .where(RagSource.status == "published")
-                .where(or_(*(RagChunk.content.ilike(f"%{term}%") for term in terms[:5])))
                 .order_by(RagChunk.created_at.desc())
-                .limit(80)
+                .limit(200)
             )
         )
         scored = sorted(
@@ -143,4 +142,3 @@ def _query_terms(query: str) -> list[str]:
 def _lexical_score(content: str, terms: list[str]) -> int:
     normalized = _normalize(content)
     return sum(normalized.count(term) for term in terms)
-
