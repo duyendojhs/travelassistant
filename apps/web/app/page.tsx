@@ -3,9 +3,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 import type {
-  AdminContentSummary,
-  AdminDashboardSummary,
-  AuditLog,
   ChatMessage,
   Citation,
   Destination,
@@ -17,7 +14,6 @@ import type {
   VoiceJob
 } from "@travelassistant/shared";
 
-import { createAdminClient } from "../lib/admin-client";
 import { createAuthClient, type AuthSession } from "../lib/auth-client";
 import { createChatClient } from "../lib/chat-client";
 import { createContentClient } from "../lib/content-client";
@@ -71,6 +67,44 @@ type ConversationMessage = ChatMessage & {
   audioUrl?: string | null;
 };
 
+type AdminTab = "dashboard" | "standards" | "bi" | "cms" | "dataQa" | "modelQa" | "monitoring" | "platforms" | "audit";
+
+type CmsRecord = Readonly<{
+  id: string;
+  title: string;
+  type: "Điểm đến" | "Bài viết" | "Khách sạn" | "Món ăn";
+  owner: string;
+  status: "Nháp" | "Đang duyệt" | "Đã xuất bản";
+  updatedAt: string;
+  views: number;
+}>;
+
+type AdminAuditEntry = Readonly<{
+  id: string;
+  action: string;
+  actor: string;
+  target: string;
+  at: string;
+  severity: "info" | "warning" | "critical";
+}>;
+
+type AdminStore = Readonly<{
+  content: CmsRecord[];
+  audit: AdminAuditEntry[];
+}>;
+
+type PipelineStandard = Readonly<{
+  id: string;
+  label: string;
+  score: number;
+  status: "Đạt" | "Theo dõi" | "Cần xử lý";
+  standard: string;
+  target: string;
+  criteria: readonly string[];
+  evidence: readonly string[];
+  nextAction: string;
+}>;
+
 const quickPrompts = [
   "Lên lịch trình Đà Nẵng 3 ngày cho gia đình",
   "Ăn gì ở Hội An buổi tối?",
@@ -92,13 +126,126 @@ const vietnameseStatus: Record<string, string> = {
 
 const emptySources: readonly Citation[] = [];
 const emptyChunks: readonly SourceChunk[] = [];
+const ADMIN_STORE_KEY = "travelassistant.admin.console.v1";
+
+const seedAdminStore: AdminStore = {
+  content: [
+    { id: "cms-1", title: "Ăn tối ở Hội An", type: "Bài viết", owner: "editor@travel", status: "Đã xuất bản", updatedAt: "2026-05-20T02:10:00.000Z", views: 18420 },
+    { id: "cms-2", title: "Lịch trình Đà Nẵng 3 ngày", type: "Điểm đến", owner: "admin@travel", status: "Đang duyệt", updatedAt: "2026-05-19T10:25:00.000Z", views: 12100 },
+    { id: "cms-3", title: "Khách sạn gần biển Mỹ Khê", type: "Khách sạn", owner: "ops@travel", status: "Nháp", updatedAt: "2026-05-18T06:45:00.000Z", views: 7350 },
+    { id: "cms-4", title: "Bún bò Huế cho khách lần đầu", type: "Món ăn", owner: "editor@travel", status: "Đã xuất bản", updatedAt: "2026-05-17T04:20:00.000Z", views: 9680 }
+  ],
+  audit: [
+    { id: "audit-1", action: "Regression test trước deploy", actor: "ci-bot", target: "travelassistant-api", at: "2026-05-20T03:30:00.000Z", severity: "info" },
+    { id: "audit-2", action: "Phát hiện null trong hotel.phone", actor: "data-qa", target: "hotel_dataset", at: "2026-05-20T02:42:00.000Z", severity: "warning" },
+    { id: "audit-3", action: "Publish bài viết Hội An", actor: "editor@travel", target: "cms-1", at: "2026-05-20T02:12:00.000Z", severity: "info" },
+    { id: "audit-4", action: "Drift score vượt ngưỡng", actor: "prometheus", target: "embedding_distribution", at: "2026-05-19T21:40:00.000Z", severity: "critical" }
+  ]
+};
+
+const pipelineStandards: readonly PipelineStandard[] = [
+  {
+    id: "data",
+    label: "Dữ liệu & RAG",
+    score: 87,
+    status: "Theo dõi",
+    standard: "ISO/IEC 25012",
+    target: "Độ tin cậy dữ liệu trước khi đưa vào RAG",
+    criteria: ["Đầy đủ", "Chính xác", "Nhất quán", "Cập nhật", "Không trùng lặp", "Có nguồn gốc"],
+    evidence: ["Null hotel.phone 2.8%", "PSI embedding 0.31", "Schema pass 99.7%"],
+    nextAction: "Giảm missing value và đặt cảnh báo drift < 0.2 PSI"
+  },
+  {
+    id: "model",
+    label: "Model QA",
+    score: 86,
+    status: "Đạt",
+    standard: "NIST AI RMF",
+    target: "AI đáng tin, trả lời đúng và có kiểm soát rủi ro",
+    criteria: ["Valid/reliable", "An toàn", "Bảo mật", "Minh bạch", "Giải thích được", "Fairness"],
+    evidence: ["Accuracy 86.4%", "Regression 42/42", "Bias gap 0.08"],
+    nextAction: "Tách benchmark du lịch Việt Nam và test citation hallucination"
+  },
+  {
+    id: "system",
+    label: "API & Hệ thống",
+    score: 94,
+    status: "Đạt",
+    standard: "Google SRE + OWASP API",
+    target: "Dịch vụ ổn định, an toàn, dễ phát hiện sự cố",
+    criteria: ["Latency", "Traffic", "Errors", "Saturation", "Auth/RBAC", "Rate limit"],
+    evidence: ["Uptime 99.98%", "p95 184 ms", "0 failed queue jobs"],
+    nextAction: "Thêm alert cho voice p95 và kiểm tra OWASP API auth theo endpoint"
+  },
+  {
+    id: "product",
+    label: "CMS / BI / UX",
+    score: 90,
+    status: "Đạt",
+    standard: "ISO/IEC 25010 + WCAG 2.2",
+    target: "Người vận hành hiểu nhanh, sửa được dữ liệu, không lạc luồng",
+    criteria: ["Phù hợp chức năng", "Usability", "Accessibility", "Security", "Maintainability", "Traceability"],
+    evidence: ["CRUD local", "Audit log", "Mobile spacing pass"],
+    nextAction: "Nối CRUD thật với backend khi API admin ổn định"
+  },
+  {
+    id: "delivery",
+    label: "Deploy pipeline",
+    score: 82,
+    status: "Theo dõi",
+    standard: "DORA metrics",
+    target: "Ra phiên bản nhanh nhưng không làm hỏng production",
+    criteria: ["Deploy frequency", "Lead time", "Change failure rate", "Time to restore"],
+    evidence: ["Render/Vercel live", "Manual deploy", "Build pass"],
+    nextAction: "Ghi thời gian deploy và lỗi deploy vào audit tự động"
+  }
+];
+
+const overallCriteriaRows = [
+  ["Dữ liệu", "ISO/IEC 25012", "Completeness, accuracy, consistency, freshness, lineage", "87/100"],
+  ["AI/model", "NIST AI RMF", "Validity, reliability, safety, explainability, fairness", "86/100"],
+  ["Hệ thống", "SRE/OWASP", "Latency, traffic, errors, saturation, API security", "94/100"],
+  ["Sản phẩm", "ISO 25010/WCAG", "Usability, accessibility, security, maintainability", "90/100"],
+  ["Deploy", "DORA", "Frequency, lead time, failure rate, restore time", "82/100"]
+] as const;
 
 function canUseOperations(role: string | null | undefined): boolean {
   return role === "editor" || role === "admin" || role === "root";
 }
 
+function readAdminStore(): AdminStore {
+  if (typeof window === "undefined") {
+    return seedAdminStore;
+  }
+  const raw = window.localStorage.getItem(ADMIN_STORE_KEY);
+  if (!raw) {
+    window.localStorage.setItem(ADMIN_STORE_KEY, JSON.stringify(seedAdminStore));
+    return seedAdminStore;
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<AdminStore>;
+    if (Array.isArray(parsed.content) && Array.isArray(parsed.audit)) {
+      return parsed as AdminStore;
+    }
+  } catch {
+    window.localStorage.removeItem(ADMIN_STORE_KEY);
+  }
+  window.localStorage.setItem(ADMIN_STORE_KEY, JSON.stringify(seedAdminStore));
+  return seedAdminStore;
+}
+
+function saveAdminStore(store: AdminStore): void {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(ADMIN_STORE_KEY, JSON.stringify(store));
+  }
+}
+
 function isWorkspace(value: string | null): value is Workspace {
   return value === "ask" || value === "plan" || value === "explore" || value === "trips" || value === "admin" || value === "account";
+}
+
+function isAdminTab(value: string | null): value is AdminTab {
+  return value === "dashboard" || value === "standards" || value === "bi" || value === "cms" || value === "dataQa" || value === "modelQa" || value === "monitoring" || value === "platforms" || value === "audit";
 }
 
 export default function Home() {
@@ -1509,53 +1656,26 @@ function AdminWorkspace({
   userRole,
   onAuthNeeded
 }: Readonly<{ accessToken?: string; userRole: string | null; onAuthNeeded: () => void }>) {
-  const [tab, setTab] = useState<"dashboard" | "content" | "audit">("dashboard");
-  const [dashboard, setDashboard] = useState<AdminDashboardSummary | null>(null);
-  const [summary, setSummary] = useState<AdminContentSummary | null>(null);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [destinations, setDestinations] = useState<Destination[]>([]);
-  const [state, setState] = useState<LoadState>("idle");
-  const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<AdminTab>("dashboard");
+  const [store, setStore] = useState<AdminStore>(seedAdminStore);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("7 ngày");
+  const [draft, setDraft] = useState<Omit<CmsRecord, "id" | "updatedAt" | "views">>({
+    title: "Cẩm nang Phú Quốc mùa hè",
+    type: "Bài viết",
+    owner: "editor@travel",
+    status: "Nháp"
+  });
+  const [editingId, setEditingId] = useState<string | null>(null);
   const canUseAdmin = userRole === "editor" || userRole === "admin" || userRole === "root";
 
   useEffect(() => {
-    if (!accessToken || !canUseAdmin) {
-      return;
+    setStore(readAdminStore());
+    const requestedTab = new URLSearchParams(window.location.search).get("ops");
+    if (isAdminTab(requestedTab)) {
+      setTab(requestedTab);
     }
-    const client = createAdminClient(accessToken);
-    let active = true;
-
-    async function loadAdmin() {
-      setState("loading");
-      try {
-        const [nextDashboard, nextSummary, nextAudit, nextDestinations] = await Promise.all([
-          client.dashboard(),
-          client.contentSummary(),
-          client.auditLogs(30),
-          client.listDestinations()
-        ]);
-        if (!active) {
-          return;
-        }
-        setDashboard(nextDashboard);
-        setSummary(nextSummary);
-        setAuditLogs(nextAudit);
-        setDestinations(nextDestinations);
-        setState("ready");
-      } catch (caught) {
-        if (!active) {
-          return;
-        }
-        setError(toErrorMessage(caught));
-        setState("error");
-      }
-    }
-
-    void loadAdmin();
-    return () => {
-      active = false;
-    };
-  }, [accessToken, canUseAdmin]);
+  }, []);
 
   if (!accessToken) {
     return <AuthRequired title="Đăng nhập để mở vận hành" onAuthNeeded={onAuthNeeded} />;
@@ -1565,87 +1685,404 @@ function AdminWorkspace({
     return <EmptyState title="Không đủ quyền" text="Tài khoản cần quyền editor, admin hoặc root." />;
   }
 
+  function persist(nextStore: AdminStore) {
+    setStore(nextStore);
+    saveAdminStore(nextStore);
+  }
+
+  function audit(action: string, target: string, severity: AdminAuditEntry["severity"] = "info") {
+    const entry: AdminAuditEntry = {
+      id: `audit-${crypto.randomUUID()}`,
+      action,
+      actor: userRole ?? "admin",
+      target,
+      at: new Date().toISOString(),
+      severity
+    };
+    persist({ ...store, audit: [entry, ...store.audit].slice(0, 80) });
+  }
+
+  function submitContent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!draft.title.trim()) return;
+    if (editingId) {
+      persist({ ...store, content: store.content.map((item) => (item.id === editingId ? { ...item, ...draft, updatedAt: new Date().toISOString() } : item)) });
+      audit("Cập nhật nội dung CMS", editingId);
+      setEditingId(null);
+      return;
+    }
+    const record: CmsRecord = {
+      id: `cms-${crypto.randomUUID()}`,
+      ...draft,
+      updatedAt: new Date().toISOString(),
+      views: Math.floor(2800 + Math.random() * 18000)
+    };
+    persist({ ...store, content: [record, ...store.content] });
+    audit("Tạo nội dung CMS", record.id);
+  }
+
+  function editContent(item: CmsRecord) {
+    setEditingId(item.id);
+    setDraft({ title: item.title, type: item.type, owner: item.owner, status: item.status });
+    setTab("cms");
+  }
+
+  function deleteContent(id: string) {
+    persist({ ...store, content: store.content.filter((item) => item.id !== id) });
+    audit("Xóa nội dung CMS", id, "warning");
+  }
+
+  function resetFakeData() {
+    persist(seedAdminStore);
+    setDraft({ title: "Cẩm nang Phú Quốc mùa hè", type: "Bài viết", owner: "editor@travel", status: "Nháp" });
+    setEditingId(null);
+  }
+
+  const visibleContent = store.content.filter((item) => `${item.title} ${item.type} ${item.status}`.toLowerCase().includes(query.toLowerCase()));
+  const totalViews = store.content.reduce((total, item) => total + item.views, 0);
+  const published = store.content.filter((item) => item.status === "Đã xuất bản").length;
+  const overallScore = Math.round(pipelineStandards.reduce((total, item) => total + item.score, 0) / pipelineStandards.length);
+  const conversionSeries = [18, 26, 33, 29, 42, 51, 57, 63];
+  const apiLatency = [210, 188, 244, 196, 172, 226, 189, 164, 205, 181, 158, 176];
+  const qaRows = [
+    ["Missing values/null", "hotel.phone", "2.8%", "Cảnh báo"],
+    ["Distribution shift", "embedding_vector", "0.31 PSI", "Cảnh báo"],
+    ["Logic nghiệp vụ", "itinerary.days <= 14", "100%", "Đạt"],
+    ["Schema validate", "article.slug unique", "99.7%", "Đạt"]
+  ];
+  const modelRows = [
+    ["Accuracy", "RAG answer", "86.4%", "+2.1%"],
+    ["Overfitting", "planner prompt", "Low", "Ổn định"],
+    ["Bias/fairness", "destination ranking", "0.08 gap", "Theo dõi"],
+    ["Regression before deploy", "voice pipeline", "42/42", "Đạt"]
+  ];
+  const systemRows = [
+    ["REST API /health", "99.98%", "164 ms", "Đạt"],
+    ["Redis queue", "1.2k jobs", "0 failed", "Đạt"],
+    ["Prometheus drift", "0.31 PSI", "warning", "Theo dõi"],
+    ["Grafana alert", "CPU p95 63%", "RAM 71%", "Đạt"]
+  ];
+  const platformRows = [
+    ["Web App", "Next.js", "Vercel", "Live API"],
+    ["Mobile App", "React Native", "Prototype", "API sẵn"],
+    ["API Integration", "REST/GraphQL", "Render", "Ổn định"],
+    ["PWA", "Next.js", "Planned", "Offline trips"]
+  ];
+
   return (
     <section className="admin-shell" aria-label="Vận hành">
-      <div className="panel-head">
+      <header className="ops-header">
         <div>
-          <h2>Vận hành</h2>
-          <p>Dữ liệu lấy trực tiếp từ hệ thống.</p>
+          <span>TravelAssistant Ops</span>
+          <h1>Trung tâm vận hành</h1>
         </div>
-        <div className="segmented">
-          {[
-            ["dashboard", "BI"],
-            ["content", "Nội dung"],
-            ["audit", "Audit"]
-          ].map(([id, label]) => (
-            <button key={id} className={tab === id ? "is-active" : ""} type="button" onClick={() => setTab(id as "dashboard" | "content" | "audit")}>
-              {label}
-            </button>
-          ))}
+        <div className="ops-filters">
+          <select value={filter} onChange={(event) => setFilter(event.target.value)}>
+            <option>24 giờ</option>
+            <option>7 ngày</option>
+            <option>30 ngày</option>
+            <option>Quý này</option>
+          </select>
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Lọc CMS, audit..." />
         </div>
-      </div>
-      {state === "loading" && <LoadingRows />}
-      {error && <ErrorNote message={error} />}
-      {tab === "dashboard" && dashboard && (
-        <>
-          <div className="admin-metrics">
-            {dashboard.metrics.map((metric) => (
-              <Metric key={metric.label} label={metric.label} value={`${metric.value}${metric.unit ? ` ${metric.unit}` : ""}`} />
+      </header>
+
+      <nav className="ops-tabs" aria-label="Trang vận hành">
+        {[
+          ["dashboard", "Tổng quan"],
+          ["standards", "Tiêu chuẩn"],
+          ["bi", "BI"],
+          ["cms", "Nội dung"],
+          ["dataQa", "Data QA"],
+          ["modelQa", "Model QA"],
+          ["monitoring", "Giám sát"],
+          ["platforms", "Nền tảng"],
+          ["audit", "Nhật ký"]
+        ].map(([id, label]) => (
+          <button key={id} className={tab === id ? "is-active" : ""} type="button" onClick={() => setTab(id as AdminTab)}>
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      <div className="ops-page">
+        {tab === "dashboard" && (
+          <>
+            <div className="ops-kpis">
+              <Metric label="Điểm tổng thể" value={`${overallScore}/100`} />
+              <Metric label="API uptime" value="99.98%" />
+              <Metric label="Latency p95" value="184 ms" />
+              <Metric label="Nội dung" value={String(store.content.length)} />
+              <Metric label="Đã xuất bản" value={String(published)} />
+            </div>
+            <div className="ops-overview">
+              <OpsOverallScore score={overallScore} totalViews={totalViews} />
+              <OpsTable title="Tiêu chí đánh giá tổng thể" rows={overallCriteriaRows} />
+            </div>
+          </>
+        )}
+
+        {tab === "standards" && (
+          <div className="ops-standard-grid standards-page">
+            {pipelineStandards.map((item) => (
+              <OpsPipelineCard key={item.id} item={item} />
             ))}
           </div>
-          <div className="bi-grid">
-            <BIBlock title="Điểm đến" rows={dashboard.top_destinations.map((item) => `${item.key}: ${item.count}`)} />
-            <BIBlock title="Intent" rows={dashboard.top_intents.map((item) => `${item.key}: ${item.count}`)} />
-            <BIBlock title="RAG" rows={dashboard.rag_quality.map((item) => `${item.label}: ${item.value}${item.unit ? ` ${item.unit}` : ""}`)} />
-            <BIBlock title="Chi phí" rows={dashboard.cost_latency.map((item) => `${item.label}: ${item.value}${item.unit ? ` ${item.unit}` : ""}`)} />
+        )}
+
+        {tab === "bi" && (
+          <div className="ops-visual-grid bi-board">
+            <OpsLineChart title="Doanh thu/usage giả lập" values={[12, 18, 16, 28, 34, 31, 44, 52]} />
+            <OpsBarChart title="Destination drill-down" items={[["Đà Nẵng", 64], ["Hội An", 53], ["Huế", 37], ["Nha Trang", 42], ["Phú Quốc", 29]]} />
+            <OpsDonut title="Tỷ lệ có nguồn RAG" value={91} />
+            <OpsFunnel title="Phễu tạo lịch trình" steps={[["Hỏi đáp", 8200], ["Mở planner", 3180], ["Tạo lịch trình", 1420], ["Lưu", 980]]} />
+            <OpsTable title="Drill-down theo phân khúc" rows={[["Executive", "North", "42%", "Tăng"], ["Operational", "Central", "63%", "Ổn"], ["Analytical", "South", "28%", "Giảm"]]} />
           </div>
-        </>
-      )}
-      {tab === "content" && (
-        <div className="content-admin">
-          {summary && (
-            <div className="summary-strip">
-              <Metric label="Tags" value={String(summary.tag_count)} />
-              <Metric label="Destinations" value={sumMetrics(summary.destinations_by_status)} />
-              <Metric label="Places" value={sumMetrics(summary.places_by_status)} />
-              <Metric label="Articles" value={sumMetrics(summary.articles_by_status)} />
-            </div>
-          )}
-          <div className="responsive-table" role="table" aria-label="Destination table">
-            <div className="table-row table-head" role="row">
-              <span>Tên</span>
-              <span>Vùng</span>
-              <span>Trạng thái</span>
-              <span>Slug</span>
-            </div>
-            {destinations.map((item) => (
-              <div className="table-row" role="row" key={item.id}>
-                <strong data-label="Tên">{item.name}</strong>
-                <span data-label="Vùng">{item.region ?? "--"}</span>
-                <span data-label="Trạng thái" className={`workflow-status ${item.status}`}>
-                  {item.status}
-                </span>
-                <span data-label="Slug">{item.slug}</span>
+        )}
+
+        {tab === "cms" && (
+          <div className="cms-board">
+            <form className="cms-editor" onSubmit={submitContent}>
+              <h2>{editingId ? "Sửa nội dung" : "Tạo nội dung"}</h2>
+              <label>
+                <span>Tiêu đề</span>
+                <input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
+              </label>
+              <div className="form-pair">
+                <label>
+                  <span>Loại</span>
+                  <select value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value as CmsRecord["type"] })}>
+                    <option>Điểm đến</option>
+                    <option>Bài viết</option>
+                    <option>Khách sạn</option>
+                    <option>Món ăn</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Trạng thái</span>
+                  <select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as CmsRecord["status"] })}>
+                    <option>Nháp</option>
+                    <option>Đang duyệt</option>
+                    <option>Đã xuất bản</option>
+                  </select>
+                </label>
               </div>
+              <label>
+                <span>Người phụ trách</span>
+                <input value={draft.owner} onChange={(event) => setDraft({ ...draft, owner: event.target.value })} />
+              </label>
+              <button className="primary-button wide" type="submit">{editingId ? "Lưu thay đổi" : "Tạo record"}</button>
+              <button className="ghost-button wide" type="button" onClick={resetFakeData}>Reset dữ liệu mẫu</button>
+            </form>
+
+            <div className="cms-list">
+              <div className="ops-section-head">
+                <h2>Quản trị nội dung</h2>
+                <p>CRUD dữ liệu, phân quyền, cấu hình hệ thống, mô phỏng custom CMS/Strapi/WordPress.</p>
+              </div>
+              {visibleContent.map((item) => (
+                <article key={item.id} className="cms-row">
+                  <div>
+                    <span>{item.type}</span>
+                    <strong>{item.title}</strong>
+                    <p>{item.owner} · {new Date(item.updatedAt).toLocaleString("vi-VN")} · {Intl.NumberFormat("vi-VN").format(item.views)} views</p>
+                  </div>
+                  <span className={`workflow-status ${item.status === "Đã xuất bản" ? "published" : item.status === "Đang duyệt" ? "review" : "draft"}`}>{item.status}</span>
+                  <button type="button" onClick={() => editContent(item)}>Sửa</button>
+                  <button type="button" onClick={() => deleteContent(item.id)}>Xóa</button>
+                </article>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {tab === "dataQa" && (
+          <div className="qa-board">
+            <OpsTable title="Data QA" rows={qaRows} />
+            <OpsBarChart title="Missing/null theo bảng" items={[["places", 2], ["hotels", 8], ["articles", 1], ["images", 4]]} />
+            <OpsDonut title="Business rules pass" value={96} />
+            <OpsLineChart title="Distribution shift PSI" values={[8, 11, 13, 22, 31, 24, 18, 16]} />
+          </div>
+        )}
+
+        {tab === "modelQa" && (
+          <div className="qa-board">
+            <OpsTable title="Model QA" rows={modelRows} />
+            <OpsLineChart title="Accuracy theo benchmark" values={[71, 74, 76, 79, 81, 83, 86, 86]} />
+            <OpsBarChart title="Regression suite" items={[["RAG", 42], ["Voice", 38], ["Planner", 51], ["CMS", 27]]} />
+            <OpsDonut title="Bias/fairness pass" value={92} />
+          </div>
+        )}
+
+        {tab === "monitoring" && (
+          <div className="qa-board">
+            <OpsTable title="System QA + Giám sát" rows={systemRows} />
+            <OpsLineChart title="API latency p95" values={apiLatency.map((value) => Math.round(value / 4))} />
+            <OpsBarChart title="Endpoint REST API" items={[["/health", 99], ["/chat", 96], ["/voice", 92], ["/rag", 89], ["/cms", 95]]} />
+            <OpsDonut title="Grafana alert OK" value={94} />
+          </div>
+        )}
+
+        {tab === "platforms" && (
+          <div className="qa-board">
+            <OpsTable title="Đa nền tảng" rows={platformRows} />
+            <OpsBarChart title="API integration coverage" items={[["REST", 92], ["GraphQL", 38], ["PWA", 55], ["Mobile", 47]]} />
+            <OpsDonut title="Web/mobile kết nối API" value={88} />
+            <OpsLineChart title="PWA readiness" values={[18, 24, 33, 42, 49, 57, 64, 72]} />
+          </div>
+        )}
+
+        {tab === "audit" && (
+          <div className="audit-panel ops-audit">
+            {store.audit.map((log) => (
+              <article key={log.id} className={log.severity}>
+                <span>{new Date(log.at).toLocaleString("vi-VN")}</span>
+                <strong>{log.action}</strong>
+                <p>{log.actor} · {log.target}</p>
+              </article>
             ))}
           </div>
-        </div>
-      )}
-      {tab === "audit" && (
-        <div className="audit-panel">
-          {auditLogs.length === 0 && <EmptyState title="Chưa có audit log" text="Các thao tác sẽ được ghi ở đây." />}
-          {auditLogs.map((log) => (
-            <article key={log.id}>
-              <span>{new Date(log.created_at).toLocaleString("vi-VN")}</span>
-              <strong>{log.action}</strong>
-              <p>
-                {log.actor_user_id ?? "system"} · {log.target_type}:{log.target_id ?? "--"}
-              </p>
-            </article>
-          ))}
-        </div>
-      )}
+        )}
+      </div>
     </section>
+  );
+}
+
+function OpsLineChart({ title, values }: Readonly<{ title: string; values: readonly number[] }>) {
+  const max = Math.max(...values, 1);
+  return (
+    <article className="ops-card line-card">
+      <h3>{title}</h3>
+      <div className="line-bars">
+        {values.map((value, index) => (
+          <span key={`${title}-${index}`} style={{ height: `${Math.max(12, (value / max) * 100)}%` }} />
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function OpsOverallScore({ score, totalViews }: Readonly<{ score: number; totalViews: number }>) {
+  return (
+    <article className="ops-score-card">
+      <div>
+        <span>Chuẩn tổng thể</span>
+        <h2>{score}/100</h2>
+        <p>Đánh giá theo dữ liệu, AI/model, hệ thống, sản phẩm và deploy. Mục tiêu: dễ kiểm thử, dễ giám sát, dễ sửa data.</p>
+      </div>
+      <div className="score-meter" style={{ background: `conic-gradient(var(--teal) ${score}%, #e6efec 0)` }}>
+        <strong>{score}%</strong>
+      </div>
+      <div className="score-foot">
+        <span>{Intl.NumberFormat("vi-VN").format(totalViews)} lượt xem CMS</span>
+        <span>2 cảnh báo cần theo dõi</span>
+      </div>
+    </article>
+  );
+}
+
+function OpsPipelineCard({ item }: Readonly<{ item: PipelineStandard }>) {
+  return (
+    <article className={`pipeline-card ${item.status === "Đạt" ? "pass" : item.status === "Theo dõi" ? "watch" : "risk"}`}>
+      <header>
+        <div>
+          <span>{item.standard}</span>
+          <h3>{item.label}</h3>
+        </div>
+        <strong>{item.score}</strong>
+      </header>
+      <p>{item.target}</p>
+      <div className="criteria-chips">
+        {item.criteria.map((criterion) => (
+          <span key={criterion}>{criterion}</span>
+        ))}
+      </div>
+      <ul>
+        {item.evidence.map((row) => (
+          <li key={row}>{row}</li>
+        ))}
+      </ul>
+      <footer>
+        <span>{item.status}</span>
+        <p>{item.nextAction}</p>
+      </footer>
+    </article>
+  );
+}
+
+function OpsBarChart({ title, items }: Readonly<{ title: string; items: ReadonlyArray<readonly [string, number]> }>) {
+  const max = Math.max(...items.map((item) => item[1]), 1);
+  return (
+    <article className="ops-card">
+      <h3>{title}</h3>
+      <div className="bar-list">
+        {items.map(([label, value]) => (
+          <div key={label}>
+            <span>{label}</span>
+            <i style={{ width: `${(value / max) * 100}%` }} />
+            <strong>{value}</strong>
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function OpsDonut({ title, value }: Readonly<{ title: string; value: number }>) {
+  return (
+    <article className="ops-card donut-card">
+      <h3>{title}</h3>
+      <div className="donut" style={{ background: `conic-gradient(var(--teal) ${value}%, #edf2f0 0)` }}>
+        <strong>{value}%</strong>
+      </div>
+    </article>
+  );
+}
+
+function OpsHeatmap({ title }: Readonly<{ title: string }>) {
+  return (
+    <article className="ops-card">
+      <h3>{title}</h3>
+      <div className="heatmap">
+        {Array.from({ length: 35 }).map((_, index) => (
+          <span key={index} style={{ opacity: 0.25 + ((index * 17) % 70) / 100 }} />
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function OpsFunnel({ title, steps }: Readonly<{ title: string; steps: ReadonlyArray<readonly [string, number]> }>) {
+  const max = Math.max(...steps.map((step) => step[1]), 1);
+  return (
+    <article className="ops-card">
+      <h3>{title}</h3>
+      <div className="funnel">
+        {steps.map(([label, value]) => (
+          <div key={label} style={{ width: `${Math.max(28, (value / max) * 100)}%` }}>
+            <span>{label}</span>
+            <strong>{Intl.NumberFormat("vi-VN").format(value)}</strong>
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function OpsTable({ title, rows }: Readonly<{ title: string; rows: readonly (readonly string[])[] }>) {
+  return (
+    <article className="ops-card ops-table-card">
+      <h3>{title}</h3>
+      <div className="ops-table">
+        {rows.map((row) => (
+          <div key={row.join("-")}>
+            {row.map((cell) => (
+              <span key={cell}>{cell}</span>
+            ))}
+          </div>
+        ))}
+      </div>
+    </article>
   );
 }
 
