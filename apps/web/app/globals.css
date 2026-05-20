@@ -1975,8 +1975,15 @@ dd {
 
 .ops-filters {
   display: grid;
-  grid-template-columns: 130px minmax(180px, 260px);
+  grid-template-columns: auto 130px minmax(180px, 260px);
+  align-items: center;
   gap: 8px;
+}
+
+.ops-filters > span {
+  color: var(--teal-dark);
+  font-size: 0.78rem;
+  font-weight: 860;
 }
 
 .ops-filters input,
@@ -2045,6 +2052,34 @@ dd {
   margin-bottom: 10px;
 }
 
+.ops-overview.log-overview {
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+}
+
+.ops-dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+  grid-template-rows: minmax(150px, auto) minmax(190px, 1fr);
+  gap: 10px;
+}
+
+.ops-dashboard-grid .ops-log-card {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+}
+
+.ops-dashboard-grid .ops-score-card,
+.ops-dashboard-grid .column-card {
+  grid-column: 2;
+}
+
+.ops-signal-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
 .ops-standard-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(180px, 1fr));
@@ -2059,6 +2094,7 @@ dd {
 .ops-card,
 .ops-score-card,
 .pipeline-card,
+.signal-card,
 .cms-editor,
 .cms-list {
   min-width: 0;
@@ -2067,6 +2103,53 @@ dd {
   background: white;
   box-shadow: 0 16px 40px rgba(22, 33, 31, 0.06);
   padding: 14px;
+}
+
+.signal-card {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-height: 136px;
+}
+
+.signal-card span {
+  color: var(--teal-dark);
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.signal-card strong {
+  color: var(--ink);
+  font-size: 1.55rem;
+  line-height: 1;
+}
+
+.signal-card h3 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.signal-card p,
+.muted-line,
+.chart-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.signal-card a,
+.ops-log-list a {
+  color: var(--teal-dark);
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.signal-card a:hover,
+.ops-log-list a:hover {
+  text-decoration: underline;
 }
 
 .ops-score-card {
@@ -2215,7 +2298,7 @@ dd {
   font-size: 1rem;
 }
 
-.line-card,
+.column-card,
 .ops-table-card {
   grid-column: span 2;
 }
@@ -2227,21 +2310,6 @@ dd {
 .ops-visual-grid.compact .line-card,
 .ops-visual-grid.compact .ops-table-card {
   grid-column: auto;
-}
-
-.line-bars {
-  display: flex;
-  align-items: end;
-  gap: 8px;
-  height: 124px;
-  padding-top: 8px;
-}
-
-.line-bars span {
-  flex: 1 1 0;
-  border-radius: 999px 999px 4px 4px;
-  background: linear-gradient(180deg, #0b7f78, #9fd9cd);
-  animation: surfaceIn 260ms ease both;
 }
 
 .bar-list {
@@ -2272,26 +2340,71 @@ dd {
 
 .bar-list i {
   height: 9px;
-  border-radius: 999px;
+  border-radius: 3px;
   background: var(--teal);
 }
 
 .bar-list strong {
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   text-align: right;
+  white-space: nowrap;
+}
+
+.column-chart {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  height: 142px;
+  border-bottom: 1px solid #dbe6e2;
+  padding: 18px 4px 0;
+}
+
+.column-chart div {
+  display: grid;
+  flex: 1 1 0;
+  grid-template-rows: auto minmax(18px, 1fr) auto;
+  align-items: end;
+  gap: 6px;
+  min-width: 0;
+  height: 100%;
+}
+
+.column-chart strong {
+  color: var(--teal-dark);
+  font-size: 0.76rem;
+  text-align: center;
+}
+
+.column-chart i {
+  display: block;
+  width: 100%;
+  min-height: 12px;
+  border-radius: 5px 5px 2px 2px;
+  background: var(--teal);
+  animation: surfaceIn 260ms ease both;
+}
+
+.column-chart span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .donut-card {
-  justify-items: center;
+  justify-items: stretch;
 }
 
 .donut {
   display: grid;
-  width: 128px;
+  width: 118px;
   aspect-ratio: 1;
   place-items: center;
   border-radius: 999px;
   box-shadow: inset 0 0 0 18px white;
+  justify-self: center;
 }
 
 .donut strong {
@@ -2303,6 +2416,76 @@ dd {
   background: white;
   color: var(--teal-dark);
   font-size: 1.2rem;
+}
+
+.donut-legend {
+  display: grid;
+  gap: 7px;
+}
+
+.donut-legend span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.donut-legend i {
+  display: inline-block;
+  width: 10px;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background: var(--teal);
+}
+
+.donut-legend span + span i {
+  background: var(--amber);
+}
+
+.ops-log-list {
+  display: grid;
+  gap: 8px;
+}
+
+.ops-log-list article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(130px, auto);
+  gap: 10px;
+  border-left: 4px solid var(--teal);
+  border-radius: 12px;
+  background: #f8fbfa;
+  padding: 10px;
+}
+
+.ops-log-list article.watch {
+  border-left-color: var(--amber);
+}
+
+.ops-log-list article.risk {
+  border-left-color: var(--red);
+}
+
+.ops-log-list span,
+.ops-log-list small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.ops-log-list strong,
+.ops-log-list b {
+  display: block;
+  margin: 3px 0;
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.ops-log-list p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
 }
 
 .heatmap {
@@ -2326,11 +2509,18 @@ dd {
 .funnel div {
   display: flex;
   justify-content: space-between;
+  gap: 10px;
+  min-width: 138px;
   min-height: 32px;
   border-radius: 999px;
   background: linear-gradient(90deg, var(--teal), #83cfc0);
   color: white;
   padding: 7px 10px;
+}
+
+.funnel span,
+.funnel strong {
+  white-space: nowrap;
 }
 
 .ops-table {
@@ -2966,9 +3156,23 @@ nextjs-portal * {
   .qa-board,
   .cms-board,
   .ops-overview,
+  .ops-overview.log-overview,
+  .ops-dashboard-grid,
+  .ops-signal-grid,
   .ops-standard-grid,
   .ops-audit {
     grid-template-columns: 1fr;
+  }
+
+  .ops-dashboard-grid {
+    grid-template-rows: auto;
+  }
+
+  .ops-dashboard-grid .ops-log-card,
+  .ops-dashboard-grid .ops-score-card,
+  .ops-dashboard-grid .column-card {
+    grid-column: auto;
+    grid-row: auto;
   }
 
   .ops-visual-grid.compact {
@@ -3006,9 +3210,18 @@ nextjs-portal * {
     grid-template-columns: 1fr;
   }
 
-  .line-card,
+  .column-card,
   .ops-table-card {
     grid-column: auto;
+  }
+
+  .ops-log-list article {
+    grid-template-columns: 1fr;
+  }
+
+  .column-chart {
+    gap: 7px;
+    height: 126px;
   }
 
   .cms-row {

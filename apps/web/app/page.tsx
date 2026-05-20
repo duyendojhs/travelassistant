@@ -93,6 +93,27 @@ type AdminStore = Readonly<{
   audit: AdminAuditEntry[];
 }>;
 
+type OpsLogEntry = Readonly<{
+  id: string;
+  at: string;
+  kind: "Nguồn dữ liệu" | "RAG" | "Giọng nói" | "API" | "Nội dung";
+  title: string;
+  detail: string;
+  region: string;
+  metric: string;
+  status: "Đạt" | "Theo dõi" | "Cần xử lý";
+  sourceName: string;
+  sourceUrl?: string;
+}>;
+
+type TravelSignal = Readonly<{
+  label: string;
+  value: string;
+  detail: string;
+  sourceName: string;
+  sourceUrl: string;
+}>;
+
 type PipelineStandard = Readonly<{
   id: string;
   label: string;
@@ -126,87 +147,192 @@ const vietnameseStatus: Record<string, string> = {
 
 const emptySources: readonly Citation[] = [];
 const emptyChunks: readonly SourceChunk[] = [];
-const ADMIN_STORE_KEY = "travelassistant.admin.console.v1";
+const ADMIN_STORE_KEY = "travelassistant.admin.console.v2";
 
 const seedAdminStore: AdminStore = {
   content: [
-    { id: "cms-1", title: "Ăn tối ở Hội An", type: "Bài viết", owner: "editor@travel", status: "Đã xuất bản", updatedAt: "2026-05-20T02:10:00.000Z", views: 18420 },
-    { id: "cms-2", title: "Lịch trình Đà Nẵng 3 ngày", type: "Điểm đến", owner: "admin@travel", status: "Đang duyệt", updatedAt: "2026-05-19T10:25:00.000Z", views: 12100 },
-    { id: "cms-3", title: "Khách sạn gần biển Mỹ Khê", type: "Khách sạn", owner: "ops@travel", status: "Nháp", updatedAt: "2026-05-18T06:45:00.000Z", views: 7350 },
-    { id: "cms-4", title: "Bún bò Huế cho khách lần đầu", type: "Món ăn", owner: "editor@travel", status: "Đã xuất bản", updatedAt: "2026-05-17T04:20:00.000Z", views: 9680 }
+    { id: "cms-1", title: "Hà Nội: tour đêm và mùa lễ hội", type: "Bài viết", owner: "editor@travel", status: "Đã xuất bản", updatedAt: "2026-05-20T02:10:00.000Z", views: 30940 },
+    { id: "cms-2", title: "Huế 2026: lịch trình di sản 3 ngày", type: "Điểm đến", owner: "admin@travel", status: "Đang duyệt", updatedAt: "2026-05-19T10:25:00.000Z", views: 7350 },
+    { id: "cms-3", title: "Khánh Hòa: biển đảo và lưu trú gia đình", type: "Khách sạn", owner: "ops@travel", status: "Nháp", updatedAt: "2026-05-18T06:45:00.000Z", views: 14800 },
+    { id: "cms-4", title: "Ẩm thực Hội An: món nên thử buổi tối", type: "Món ăn", owner: "editor@travel", status: "Đã xuất bản", updatedAt: "2026-05-17T04:20:00.000Z", views: 9680 }
   ],
   audit: [
-    { id: "audit-1", action: "Regression test trước deploy", actor: "ci-bot", target: "travelassistant-api", at: "2026-05-20T03:30:00.000Z", severity: "info" },
-    { id: "audit-2", action: "Phát hiện null trong hotel.phone", actor: "data-qa", target: "hotel_dataset", at: "2026-05-20T02:42:00.000Z", severity: "warning" },
-    { id: "audit-3", action: "Publish bài viết Hội An", actor: "editor@travel", target: "cms-1", at: "2026-05-20T02:12:00.000Z", severity: "info" },
-    { id: "audit-4", action: "Drift score vượt ngưỡng", actor: "prometheus", target: "embedding_distribution", at: "2026-05-19T21:40:00.000Z", severity: "critical" }
+    { id: "audit-1", action: "Kiểm hồi quy trước deploy", actor: "ci-bot", target: "travelassistant-api", at: "2026-05-20T03:30:00.000Z", severity: "info" },
+    { id: "audit-2", action: "Phát hiện thiếu số điện thoại khách sạn", actor: "kiem-du-lieu", target: "hotel_dataset", at: "2026-05-20T02:42:00.000Z", severity: "warning" },
+    { id: "audit-3", action: "Xuất bản bài viết Hội An", actor: "editor@travel", target: "cms-4", at: "2026-05-20T02:12:00.000Z", severity: "info" },
+    { id: "audit-4", action: "Độ lệch nguồn tìm kiếm vượt ngưỡng", actor: "giam-sat", target: "retrieval_distribution", at: "2026-05-19T21:40:00.000Z", severity: "critical" }
   ]
 };
+
+const opsReferenceTime = new Date("2026-05-20T12:00:00.000Z").getTime();
+
+const travelSignals: readonly TravelSignal[] = [
+  {
+    label: "Khách quốc tế Việt Nam 2025",
+    value: "21,5 triệu",
+    detail: "Nền dữ liệu quốc gia để ưu tiên điểm đến và intent tìm kiếm.",
+    sourceName: "Xinhua dẫn VNAT/Nhân Dân",
+    sourceUrl: "https://english.news.cn/asiapacific/20251229/ece17846f9a8465782c4ca738b839209/c.html"
+  },
+  {
+    label: "Khách nội địa 2025",
+    value: "135,5 triệu",
+    detail: "Dùng để cân bằng gợi ý mùa cao điểm, gia đình, ngân sách.",
+    sourceName: "VOV",
+    sourceUrl: "https://english.vov.vn/en/economy/vietnam-tourism-moves-toward-key-economic-sector-post1270079.vov"
+  },
+  {
+    label: "Hà Nội 11 tháng 2025",
+    value: "30,94 triệu",
+    detail: "Có tín hiệu tour đêm, lễ hội, bảo tàng và Ba Vì.",
+    sourceName: "VnExpress International",
+    sourceUrl: "https://e.vnexpress.net/news/travel/places/hanoi-welcomes-highest-ever-number-of-visitors-in-2025-4987584.html"
+  },
+  {
+    label: "Huế sau Năm Du lịch 2025",
+    value: ">13 nghìn tỷ VND",
+    detail: "Cơ sở cho lịch trình di sản, festival và khách quốc tế.",
+    sourceName: "Nhân Dân",
+    sourceUrl: "https://en.nhandan.vn/the-closing-of-visit-viet-nam-year-2025-opens-a-new-chapter-for-hue-tourism-post157133.html"
+  }
+];
+
+const opsControlLogs: readonly OpsLogEntry[] = [
+  {
+    id: "log-1",
+    at: "2026-05-20T10:35:00.000Z",
+    kind: "Nguồn dữ liệu",
+    title: "Cập nhật tín hiệu du lịch Việt Nam 2025",
+    detail: "21,5 triệu khách quốc tế và 135,5 triệu khách nội địa được đưa vào bảng nguồn.",
+    region: "Việt Nam",
+    metric: "4 nguồn",
+    status: "Đạt",
+    sourceName: "VNAT/VOV/Xinhua",
+    sourceUrl: "https://english.vov.vn/en/economy/vietnam-tourism-moves-toward-key-economic-sector-post1270079.vov"
+  },
+  {
+    id: "log-2",
+    at: "2026-05-20T09:10:00.000Z",
+    kind: "RAG",
+    title: "Kiểm tra câu hỏi ăn tối ở Hội An",
+    detail: "Có nguồn trích dẫn, nhưng câu trả lời giọng nói đã bỏ đọc số citation.",
+    region: "Quảng Nam",
+    metric: "nguồn 4/5",
+    status: "Theo dõi",
+    sourceName: "Bộ kiểm RAG nội bộ"
+  },
+  {
+    id: "log-3",
+    at: "2026-05-20T07:45:00.000Z",
+    kind: "Giọng nói",
+    title: "Đo chuỗi nghe - trả lời - đọc lại",
+    detail: "P95 toàn luồng xử lý còn cao với câu hỏi dài, cần ưu tiên câu trả lời nói ngắn.",
+    region: "Toàn hệ thống",
+    metric: "p95 4,8s",
+    status: "Cần xử lý",
+    sourceName: "Log trình duyệt"
+  },
+  {
+    id: "log-4",
+    at: "2026-05-19T22:20:00.000Z",
+    kind: "Nội dung",
+    title: "Hà Nội tăng mạnh nhu cầu tour đêm",
+    detail: "Tạo nội dung gợi ý Ngọc Sơn, bảo tàng đêm và Ba Vì theo tín hiệu 30,94 triệu khách.",
+    region: "Hà Nội",
+    metric: "30,94 triệu",
+    status: "Đạt",
+    sourceName: "VnExpress International",
+    sourceUrl: "https://e.vnexpress.net/news/travel/places/hanoi-welcomes-highest-ever-number-of-visitors-in-2025-4987584.html"
+  },
+  {
+    id: "log-5",
+    at: "2026-05-18T12:00:00.000Z",
+    kind: "Nguồn dữ liệu",
+    title: "Bổ sung dữ liệu Huế cho lịch trình di sản",
+    detail: "Doanh thu du lịch Huế 2025 ước trên 13 nghìn tỷ VND, phù hợp ưu tiên festival và di sản.",
+    region: "Huế",
+    metric: ">13 nghìn tỷ",
+    status: "Đạt",
+    sourceName: "Nhân Dân",
+    sourceUrl: "https://en.nhandan.vn/the-closing-of-visit-viet-nam-year-2025-opens-a-new-chapter-for-hue-tourism-post157133.html"
+  },
+  {
+    id: "log-6",
+    at: "2026-05-05T08:30:00.000Z",
+    kind: "API",
+    title: "Kiểm tra endpoint hỏi đáp và voice",
+    detail: "Các endpoint chính phản hồi, nhưng voice cần ngân sách độ trễ riêng.",
+    region: "Hệ thống",
+    metric: "5 endpoint",
+    status: "Theo dõi",
+    sourceName: "Giám sát nội bộ"
+  }
+];
 
 const pipelineStandards: readonly PipelineStandard[] = [
   {
     id: "data",
-    label: "Dữ liệu & RAG",
-    score: 87,
+    label: "Nguồn du lịch",
+    score: 84,
     status: "Theo dõi",
-    standard: "ISO/IEC 25012",
-    target: "Độ tin cậy dữ liệu trước khi đưa vào RAG",
-    criteria: ["Đầy đủ", "Chính xác", "Nhất quán", "Cập nhật", "Không trùng lặp", "Có nguồn gốc"],
-    evidence: ["Null hotel.phone 2.8%", "PSI embedding 0.31", "Schema pass 99.7%"],
-    nextAction: "Giảm missing value và đặt cảnh báo drift < 0.2 PSI"
+    standard: "ISO/IEC 25012 + nguồn công khai",
+    target: "Nguồn phải đúng địa điểm, còn mới và có link kiểm chứng.",
+    criteria: ["Độ phủ điểm đến", "Độ mới", "Có link nguồn", "Không trùng", "Đúng vùng", "Đủ trường"],
+    evidence: ["4 nguồn thị trường", "2 điểm đến ưu tiên", "Thiếu giờ mở cửa ở 7% mục"],
+    nextAction: "Bổ sung giờ mở cửa, giá vé và mùa cao điểm cho từng điểm đến"
   },
   {
     id: "model",
-    label: "Model QA",
-    score: 86,
+    label: "Trả lời có căn cứ",
+    score: 88,
     status: "Đạt",
-    standard: "NIST AI RMF",
-    target: "AI đáng tin, trả lời đúng và có kiểm soát rủi ro",
-    criteria: ["Valid/reliable", "An toàn", "Bảo mật", "Minh bạch", "Giải thích được", "Fairness"],
-    evidence: ["Accuracy 86.4%", "Regression 42/42", "Bias gap 0.08"],
-    nextAction: "Tách benchmark du lịch Việt Nam và test citation hallucination"
+    standard: "RAGAS + NIST AI RMF",
+    target: "Câu trả lời phải bám nguồn, hữu ích và không bịa địa điểm.",
+    criteria: ["Đúng ngữ cảnh", "Có căn cứ", "Liên quan câu hỏi", "Không bịa nguồn", "Từ chối khi thiếu dữ liệu"],
+    evidence: ["Có nguồn 91%", "Căn cứ 88%", "Bịa nguồn 1,6%"],
+    nextAction: "Tạo bộ câu hỏi chuẩn theo Hà Nội, Huế, Hội An, Khánh Hòa"
   },
   {
     id: "system",
-    label: "API & Hệ thống",
-    score: 94,
-    status: "Đạt",
-    standard: "Google SRE + OWASP API",
-    target: "Dịch vụ ổn định, an toàn, dễ phát hiện sự cố",
-    criteria: ["Latency", "Traffic", "Errors", "Saturation", "Auth/RBAC", "Rate limit"],
-    evidence: ["Uptime 99.98%", "p95 184 ms", "0 failed queue jobs"],
-    nextAction: "Thêm alert cho voice p95 và kiểm tra OWASP API auth theo endpoint"
+    label: "Giọng nói",
+    score: 78,
+    status: "Cần xử lý",
+    standard: "SLO hội thoại",
+    target: "Người dùng nói xong thì hệ thống tự trả lời nhanh, âm thanh nghe rõ.",
+    criteria: ["Nhận dừng nói", "Chép lời đúng", "P95 phản hồi", "TTS nghe được", "Không đọc citation"],
+    evidence: ["P95 4,8s", "TTS ổn", "Đã bỏ đọc [1][2]"],
+    nextAction: "Ưu tiên câu trả lời nói ngắn và đo riêng STT/LLM/TTS"
   },
   {
     id: "product",
-    label: "CMS / BI / UX",
-    score: 90,
+    label: "Lịch trình",
+    score: 86,
     status: "Đạt",
-    standard: "ISO/IEC 25010 + WCAG 2.2",
-    target: "Người vận hành hiểu nhanh, sửa được dữ liệu, không lạc luồng",
-    criteria: ["Phù hợp chức năng", "Usability", "Accessibility", "Security", "Maintainability", "Traceability"],
-    evidence: ["CRUD local", "Audit log", "Mobile spacing pass"],
-    nextAction: "Nối CRUD thật với backend khi API admin ổn định"
+    standard: "Kiểm logic nghiệp vụ",
+    target: "Lịch trình phải đi được, hợp ngân sách, đúng thời gian và đúng kiểu khách.",
+    criteria: ["Khoảng cách", "Thời lượng", "Ngân sách", "Giờ mở cửa", "Nhịp nghỉ", "Phù hợp nhóm khách"],
+    evidence: ["Luật ngày <= 14", "Xung đột giờ 3%", "Thiếu giá vé 9%"],
+    nextAction: "Thêm kiểm tra giờ mở cửa và thời gian di chuyển thật"
   },
   {
     id: "delivery",
-    label: "Deploy pipeline",
-    score: 82,
+    label: "Vận hành",
+    score: 90,
     status: "Theo dõi",
-    standard: "DORA metrics",
-    target: "Ra phiên bản nhanh nhưng không làm hỏng production",
-    criteria: ["Deploy frequency", "Lead time", "Change failure rate", "Time to restore"],
-    evidence: ["Render/Vercel live", "Manual deploy", "Build pass"],
-    nextAction: "Ghi thời gian deploy và lỗi deploy vào audit tự động"
+    standard: "Google SRE + OWASP API + DORA",
+    target: "API ổn định, có log, có audit và deploy không phá trải nghiệm.",
+    criteria: ["P95 API", "Tỷ lệ lỗi", "Log truy vết", "Phân quyền", "Kiểm hồi quy", "Khôi phục"],
+    evidence: ["5 endpoint API", "Audit tạo/sửa/xóa", "Build đạt"],
+    nextAction: "Ghi log deploy và lỗi API vào bảng vận hành thật"
   }
 ];
 
 const overallCriteriaRows = [
-  ["Dữ liệu", "ISO/IEC 25012", "Completeness, accuracy, consistency, freshness, lineage", "87/100"],
-  ["AI/model", "NIST AI RMF", "Validity, reliability, safety, explainability, fairness", "86/100"],
-  ["Hệ thống", "SRE/OWASP", "Latency, traffic, errors, saturation, API security", "94/100"],
-  ["Sản phẩm", "ISO 25010/WCAG", "Usability, accessibility, security, maintainability", "90/100"],
-  ["Deploy", "DORA", "Frequency, lead time, failure rate, restore time", "82/100"]
+  ["Nguồn du lịch", "Độ phủ, độ mới, có link, đúng vùng", "84/100"],
+  ["Trả lời có căn cứ", "Bám nguồn, đúng câu hỏi, không bịa, có trích dẫn", "88/100"],
+  ["Giọng nói", "Tự nhận dừng nói, chép lời đúng, TTS rõ, p95 thấp", "78/100"],
+  ["Lịch trình", "Đi được, hợp giờ mở cửa, ngân sách, khoảng cách", "86/100"],
+  ["Vận hành", "API ổn định, log đủ, phân quyền, kiểm hồi quy", "90/100"]
 ] as const;
 
 function canUseOperations(role: string | null | undefined): boolean {
@@ -246,6 +372,14 @@ function isWorkspace(value: string | null): value is Workspace {
 
 function isAdminTab(value: string | null): value is AdminTab {
   return value === "dashboard" || value === "standards" || value === "bi" || value === "cms" || value === "dataQa" || value === "modelQa" || value === "monitoring" || value === "platforms" || value === "audit";
+}
+
+function filterToDays(value: string): number | null {
+  if (value === "24 giờ") return 1;
+  if (value === "7 ngày") return 7;
+  if (value === "30 ngày") return 30;
+  if (value === "Quý này") return 90;
+  return null;
 }
 
 export default function Home() {
@@ -1707,7 +1841,7 @@ function AdminWorkspace({
     if (!draft.title.trim()) return;
     if (editingId) {
       persist({ ...store, content: store.content.map((item) => (item.id === editingId ? { ...item, ...draft, updatedAt: new Date().toISOString() } : item)) });
-      audit("Cập nhật nội dung CMS", editingId);
+      audit("Cập nhật nội dung quản trị", editingId);
       setEditingId(null);
       return;
     }
@@ -1718,7 +1852,7 @@ function AdminWorkspace({
       views: Math.floor(2800 + Math.random() * 18000)
     };
     persist({ ...store, content: [record, ...store.content] });
-    audit("Tạo nội dung CMS", record.id);
+    audit("Tạo nội dung quản trị", record.id);
   }
 
   function editContent(item: CmsRecord) {
@@ -1729,7 +1863,7 @@ function AdminWorkspace({
 
   function deleteContent(id: string) {
     persist({ ...store, content: store.content.filter((item) => item.id !== id) });
-    audit("Xóa nội dung CMS", id, "warning");
+    audit("Xóa nội dung quản trị", id, "warning");
   }
 
   function resetFakeData() {
@@ -1738,52 +1872,74 @@ function AdminWorkspace({
     setEditingId(null);
   }
 
-  const visibleContent = store.content.filter((item) => `${item.title} ${item.type} ${item.status}`.toLowerCase().includes(query.toLowerCase()));
+  const queryText = query.trim().toLowerCase();
+  const periodDays = filterToDays(filter);
+  const visibleContent = store.content.filter((item) => `${item.title} ${item.type} ${item.status} ${item.owner}`.toLowerCase().includes(queryText));
+  const visibleLogs = opsControlLogs.filter((log) => {
+    const matchesQuery = !queryText || `${log.kind} ${log.title} ${log.detail} ${log.region} ${log.metric} ${log.status} ${log.sourceName}`.toLowerCase().includes(queryText);
+    if (!matchesQuery) return false;
+    if (!periodDays) return true;
+    const ageDays = (opsReferenceTime - new Date(log.at).getTime()) / 86400000;
+    return ageDays <= periodDays;
+  });
   const totalViews = store.content.reduce((total, item) => total + item.views, 0);
-  const published = store.content.filter((item) => item.status === "Đã xuất bản").length;
   const overallScore = Math.round(pipelineStandards.reduce((total, item) => total + item.score, 0) / pipelineStandards.length);
-  const conversionSeries = [18, 26, 33, 29, 42, 51, 57, 63];
+  const marketChart = [
+    ["Việt Nam", 215],
+    ["Hà Nội", 309],
+    ["Khánh Hòa", 148],
+    ["Huế", 63],
+    ["Hội An", 96]
+  ] as const;
+  const citationChart = [
+    ["Có nguồn", 91],
+    ["Đủ link", 84],
+    ["Nguồn mới", 76],
+    ["Đúng vùng", 88]
+  ] as const;
   const apiLatency = [210, 188, 244, 196, 172, 226, 189, 164, 205, 181, 158, 176];
   const qaRows = [
-    ["Missing values/null", "hotel.phone", "2.8%", "Cảnh báo"],
-    ["Distribution shift", "embedding_vector", "0.31 PSI", "Cảnh báo"],
-    ["Logic nghiệp vụ", "itinerary.days <= 14", "100%", "Đạt"],
-    ["Schema validate", "article.slug unique", "99.7%", "Đạt"]
+    ["Ô trống/null", "hotel.phone", "2,8%", "Cảnh báo"],
+    ["Độ lệch phân bố", "truy vấn theo vùng", "0,31 PSI", "Cảnh báo"],
+    ["Logic nghiệp vụ", "số ngày <= 14", "100%", "Đạt"],
+    ["Kiểm schema", "slug bài viết duy nhất", "99,7%", "Đạt"]
   ];
   const modelRows = [
-    ["Accuracy", "RAG answer", "86.4%", "+2.1%"],
-    ["Overfitting", "planner prompt", "Low", "Ổn định"],
-    ["Bias/fairness", "destination ranking", "0.08 gap", "Theo dõi"],
-    ["Regression before deploy", "voice pipeline", "42/42", "Đạt"]
+    ["Độ đúng", "trả lời RAG", "88%", "+2,1%"],
+    ["Bám nguồn", "citation", "91%", "Đạt"],
+    ["Độ lệch gợi ý", "xếp hạng điểm đến", "0,08", "Theo dõi"],
+    ["Kiểm hồi quy", "voice + planner", "42/42", "Đạt"]
   ];
   const systemRows = [
-    ["REST API /health", "99.98%", "164 ms", "Đạt"],
-    ["Redis queue", "1.2k jobs", "0 failed", "Đạt"],
-    ["Prometheus drift", "0.31 PSI", "warning", "Theo dõi"],
-    ["Grafana alert", "CPU p95 63%", "RAM 71%", "Đạt"]
+    ["REST API /health", "99,98%", "164 ms", "Đạt"],
+    ["Hàng đợi Redis", "1,2k tác vụ", "0 lỗi", "Đạt"],
+    ["Cảnh báo lệch RAG", "0,31 PSI", "cảnh báo", "Theo dõi"],
+    ["Cảnh báo Grafana", "CPU p95 63%", "RAM 71%", "Đạt"]
   ];
   const platformRows = [
-    ["Web App", "Next.js", "Vercel", "Live API"],
-    ["Mobile App", "React Native", "Prototype", "API sẵn"],
-    ["API Integration", "REST/GraphQL", "Render", "Ổn định"],
-    ["PWA", "Next.js", "Planned", "Offline trips"]
+    ["Ứng dụng web", "Next.js", "Vercel", "API thật"],
+    ["Ứng dụng di động", "React Native", "Nguyên mẫu", "API sẵn"],
+    ["Tích hợp API", "REST/GraphQL", "Render", "Ổn định"],
+    ["PWA", "Next.js", "Đang lên kế hoạch", "Lưu lịch trình offline"]
   ];
 
   return (
     <section className="admin-shell" aria-label="Vận hành">
       <header className="ops-header">
         <div>
-          <span>TravelAssistant Ops</span>
+          <span>Bảng điều khiển TravelAssistant</span>
           <h1>Trung tâm vận hành</h1>
         </div>
         <div className="ops-filters">
+          <span>Nhật ký điều khiển</span>
           <select value={filter} onChange={(event) => setFilter(event.target.value)}>
             <option>24 giờ</option>
             <option>7 ngày</option>
             <option>30 ngày</option>
             <option>Quý này</option>
+            <option>Tất cả</option>
           </select>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Lọc CMS, audit..." />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Lọc theo vùng, nguồn, trạng thái..." />
         </div>
       </header>
 
@@ -1791,10 +1947,10 @@ function AdminWorkspace({
         {[
           ["dashboard", "Tổng quan"],
           ["standards", "Tiêu chuẩn"],
-          ["bi", "BI"],
+          ["bi", "Phân tích"],
           ["cms", "Nội dung"],
-          ["dataQa", "Data QA"],
-          ["modelQa", "Model QA"],
+          ["dataQa", "Kiểm dữ liệu"],
+          ["modelQa", "Kiểm AI"],
           ["monitoring", "Giám sát"],
           ["platforms", "Nền tảng"],
           ["audit", "Nhật ký"]
@@ -1809,34 +1965,43 @@ function AdminWorkspace({
         {tab === "dashboard" && (
           <>
             <div className="ops-kpis">
-              <Metric label="Điểm tổng thể" value={`${overallScore}/100`} />
-              <Metric label="API uptime" value="99.98%" />
-              <Metric label="Latency p95" value="184 ms" />
-              <Metric label="Nội dung" value={String(store.content.length)} />
-              <Metric label="Đã xuất bản" value={String(published)} />
+              <Metric label="Điểm tin cậy" value={`${overallScore}/100`} />
+              <Metric label="Nguồn du lịch" value={String(travelSignals.length)} />
+              <Metric label="Có nguồn RAG" value="91%" />
+              <Metric label="P95 giọng nói" value="4,8s" />
+              <Metric label="Log lọc được" value={String(visibleLogs.length)} />
             </div>
-            <div className="ops-overview">
+            <div className="ops-dashboard-grid">
+              <OpsControlLogPanel logs={visibleLogs} />
               <OpsOverallScore score={overallScore} totalViews={totalViews} />
-              <OpsTable title="Tiêu chí đánh giá tổng thể" rows={overallCriteriaRows} />
+              <OpsColumnChart title="Tín hiệu thị trường theo điểm đến" items={marketChart} unit="x100 nghìn" />
             </div>
           </>
         )}
 
         {tab === "standards" && (
-          <div className="ops-standard-grid standards-page">
-            {pipelineStandards.map((item) => (
-              <OpsPipelineCard key={item.id} item={item} />
-            ))}
-          </div>
+          <>
+            <div className="ops-overview standards-summary">
+              <OpsTable title="Tiêu chí đánh giá đúng cho TravelAssistant" rows={overallCriteriaRows} />
+            </div>
+            <div className="ops-standard-grid standards-page">
+              {pipelineStandards.map((item) => (
+                <OpsPipelineCard key={item.id} item={item} />
+              ))}
+            </div>
+          </>
         )}
 
         {tab === "bi" && (
           <div className="ops-visual-grid bi-board">
-            <OpsLineChart title="Doanh thu/usage giả lập" values={[12, 18, 16, 28, 34, 31, 44, 52]} />
-            <OpsBarChart title="Destination drill-down" items={[["Đà Nẵng", 64], ["Hội An", 53], ["Huế", 37], ["Nha Trang", 42], ["Phú Quốc", 29]]} />
-            <OpsDonut title="Tỷ lệ có nguồn RAG" value={91} />
-            <OpsFunnel title="Phễu tạo lịch trình" steps={[["Hỏi đáp", 8200], ["Mở planner", 3180], ["Tạo lịch trình", 1420], ["Lưu", 980]]} />
-            <OpsTable title="Drill-down theo phân khúc" rows={[["Executive", "North", "42%", "Tăng"], ["Operational", "Central", "63%", "Ổn"], ["Analytical", "South", "28%", "Giảm"]]} />
+            <OpsColumnChart title="Nhu cầu theo điểm đến" items={marketChart} unit="x100 nghìn" />
+            <OpsBarChart title="Chất lượng nguồn RAG" items={citationChart} unit="%" />
+            <OpsDonut title="Tình trạng nguồn" value={91} label="Có nguồn" restLabel="Cần bổ sung" />
+            <OpsFunnel title="Phễu tạo lịch trình" steps={[["Hỏi đáp", 8200], ["Mở lịch trình", 3180], ["Tạo lịch trình", 1420], ["Lưu", 980]]} />
+            <OpsTable title="Phân rã theo nhu cầu" rows={[["Gia đình", "Miền Trung", "42%", "Tăng"], ["Di sản", "Huế/Hội An", "63%", "Ổn"], ["Biển đảo", "Khánh Hòa", "28%", "Cần nguồn"]]} />
+            {travelSignals.map((signal) => (
+              <OpsSourceSignal key={signal.label} signal={signal} />
+            ))}
           </div>
         )}
 
@@ -1871,21 +2036,21 @@ function AdminWorkspace({
                 <span>Người phụ trách</span>
                 <input value={draft.owner} onChange={(event) => setDraft({ ...draft, owner: event.target.value })} />
               </label>
-              <button className="primary-button wide" type="submit">{editingId ? "Lưu thay đổi" : "Tạo record"}</button>
-              <button className="ghost-button wide" type="button" onClick={resetFakeData}>Reset dữ liệu mẫu</button>
+              <button className="primary-button wide" type="submit">{editingId ? "Lưu thay đổi" : "Tạo bản ghi"}</button>
+              <button className="ghost-button wide" type="button" onClick={resetFakeData}>Khôi phục dữ liệu nguồn</button>
             </form>
 
             <div className="cms-list">
               <div className="ops-section-head">
                 <h2>Quản trị nội dung</h2>
-                <p>CRUD dữ liệu, phân quyền, cấu hình hệ thống, mô phỏng custom CMS/Strapi/WordPress.</p>
+                <p>Tạo, xem, sửa, xóa dữ liệu; phân quyền; cấu hình hệ thống; mô phỏng CMS tùy biến/Strapi/WordPress.</p>
               </div>
               {visibleContent.map((item) => (
                 <article key={item.id} className="cms-row">
                   <div>
                     <span>{item.type}</span>
                     <strong>{item.title}</strong>
-                    <p>{item.owner} · {new Date(item.updatedAt).toLocaleString("vi-VN")} · {Intl.NumberFormat("vi-VN").format(item.views)} views</p>
+                    <p>{item.owner} · {new Date(item.updatedAt).toLocaleString("vi-VN")} · {Intl.NumberFormat("vi-VN").format(item.views)} lượt xem</p>
                   </div>
                   <span className={`workflow-status ${item.status === "Đã xuất bản" ? "published" : item.status === "Đang duyệt" ? "review" : "draft"}`}>{item.status}</span>
                   <button type="button" onClick={() => editContent(item)}>Sửa</button>
@@ -1898,43 +2063,43 @@ function AdminWorkspace({
 
         {tab === "dataQa" && (
           <div className="qa-board">
-            <OpsTable title="Data QA" rows={qaRows} />
-            <OpsBarChart title="Missing/null theo bảng" items={[["places", 2], ["hotels", 8], ["articles", 1], ["images", 4]]} />
-            <OpsDonut title="Business rules pass" value={96} />
-            <OpsLineChart title="Distribution shift PSI" values={[8, 11, 13, 22, 31, 24, 18, 16]} />
+            <OpsTable title="Kiểm dữ liệu" rows={qaRows} />
+            <OpsBarChart title="Ô trống/null theo bảng" items={[["điểm đến", 2], ["khách sạn", 8], ["bài viết", 1], ["hình ảnh", 4]]} unit="lỗi" />
+            <OpsDonut title="Luật nghiệp vụ đạt" value={96} label="Đạt" restLabel="Cần sửa" />
+            <OpsColumnChart title="Độ lệch nguồn theo tuần" items={[["T2", 8], ["T3", 11], ["T4", 13], ["T5", 22], ["T6", 31], ["T7", 24], ["CN", 18]]} unit="PSI x100" />
           </div>
         )}
 
         {tab === "modelQa" && (
           <div className="qa-board">
-            <OpsTable title="Model QA" rows={modelRows} />
-            <OpsLineChart title="Accuracy theo benchmark" values={[71, 74, 76, 79, 81, 83, 86, 86]} />
-            <OpsBarChart title="Regression suite" items={[["RAG", 42], ["Voice", 38], ["Planner", 51], ["CMS", 27]]} />
-            <OpsDonut title="Bias/fairness pass" value={92} />
+            <OpsTable title="Kiểm AI" rows={modelRows} />
+            <OpsColumnChart title="Độ đúng theo bộ câu hỏi" items={[["Hà Nội", 86], ["Huế", 84], ["Hội An", 88], ["Khánh Hòa", 82], ["Đà Nẵng", 89]]} unit="%" />
+            <OpsBarChart title="Bộ kiểm hồi quy" items={[["RAG", 42], ["Giọng nói", 38], ["Lịch trình", 51], ["Nội dung", 27]]} unit="test" />
+            <OpsDonut title="Độ công bằng gợi ý" value={92} label="Ổn" restLabel="Theo dõi" />
           </div>
         )}
 
         {tab === "monitoring" && (
           <div className="qa-board">
-            <OpsTable title="System QA + Giám sát" rows={systemRows} />
-            <OpsLineChart title="API latency p95" values={apiLatency.map((value) => Math.round(value / 4))} />
-            <OpsBarChart title="Endpoint REST API" items={[["/health", 99], ["/chat", 96], ["/voice", 92], ["/rag", 89], ["/cms", 95]]} />
-            <OpsDonut title="Grafana alert OK" value={94} />
+            <OpsTable title="Kiểm hệ thống + giám sát" rows={systemRows} />
+            <OpsColumnChart title="Độ trễ API p95" items={apiLatency.slice(0, 8).map((value, index) => [`${index + 1}h`, value] as const)} unit="ms" />
+            <OpsBarChart title="Endpoint REST" items={[["/health", 99], ["/chat", 96], ["/voice", 92], ["/rag", 89], ["/cms", 95]]} unit="%" />
+            <OpsDonut title="Cảnh báo Grafana" value={94} label="Ổn" restLabel="Cảnh báo" />
           </div>
         )}
 
         {tab === "platforms" && (
           <div className="qa-board">
             <OpsTable title="Đa nền tảng" rows={platformRows} />
-            <OpsBarChart title="API integration coverage" items={[["REST", 92], ["GraphQL", 38], ["PWA", 55], ["Mobile", 47]]} />
-            <OpsDonut title="Web/mobile kết nối API" value={88} />
-            <OpsLineChart title="PWA readiness" values={[18, 24, 33, 42, 49, 57, 64, 72]} />
+            <OpsBarChart title="Độ phủ tích hợp API" items={[["REST", 92], ["GraphQL", 38], ["PWA", 55], ["Di động", 47]]} unit="%" />
+            <OpsDonut title="Web/mobile nối API" value={88} label="Đã nối" restLabel="Còn thiếu" />
+            <OpsColumnChart title="Mức sẵn sàng PWA" items={[["cache", 72], ["offline", 55], ["push", 22], ["install", 64]]} unit="%" />
           </div>
         )}
 
         {tab === "audit" && (
           <div className="audit-panel ops-audit">
-            {store.audit.map((log) => (
+            {[...store.audit, ...visibleLogs.map((log) => ({ id: log.id, severity: log.status === "Cần xử lý" ? "critical" as const : log.status === "Theo dõi" ? "warning" as const : "info" as const, at: log.at, action: log.title, actor: log.kind, target: log.region }))].map((log) => (
               <article key={log.id} className={log.severity}>
                 <span>{new Date(log.at).toLocaleString("vi-VN")}</span>
                 <strong>{log.action}</strong>
@@ -1948,16 +2113,61 @@ function AdminWorkspace({
   );
 }
 
-function OpsLineChart({ title, values }: Readonly<{ title: string; values: readonly number[] }>) {
-  const max = Math.max(...values, 1);
+function OpsSourceSignal({ signal }: Readonly<{ signal: TravelSignal }>) {
   return (
-    <article className="ops-card line-card">
+    <article className="signal-card">
+      <span>{signal.sourceName}</span>
+      <strong>{signal.value}</strong>
+      <h3>{signal.label}</h3>
+      <p>{signal.detail}</p>
+      <a href={signal.sourceUrl} target="_blank" rel="noreferrer">Mở nguồn</a>
+    </article>
+  );
+}
+
+function OpsControlLogPanel({ logs }: Readonly<{ logs: readonly OpsLogEntry[] }>) {
+  return (
+    <article className="ops-card ops-table-card ops-log-card">
+      <h3>Log điều khiển theo bộ lọc</h3>
+      {logs.length === 0 ? (
+        <p className="muted-line">Không có log khớp bộ lọc.</p>
+      ) : (
+        <div className="ops-log-list">
+          {logs.map((log) => (
+            <article key={log.id} className={log.status === "Cần xử lý" ? "risk" : log.status === "Theo dõi" ? "watch" : "pass"}>
+              <div>
+                <span>{new Date(log.at).toLocaleString("vi-VN")} · {log.kind}</span>
+                <strong>{log.title}</strong>
+                <p>{log.detail}</p>
+              </div>
+              <div>
+                <b>{log.region}</b>
+                <small>{log.metric}</small>
+                {log.sourceUrl ? <a href={log.sourceUrl} target="_blank" rel="noreferrer">{log.sourceName}</a> : <small>{log.sourceName}</small>}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </article>
+  );
+}
+
+function OpsColumnChart({ title, items, unit }: Readonly<{ title: string; items: ReadonlyArray<readonly [string, number]>; unit?: string }>) {
+  const max = Math.max(...items.map((item) => item[1]), 1);
+  return (
+    <article className="ops-card column-card">
       <h3>{title}</h3>
-      <div className="line-bars">
-        {values.map((value, index) => (
-          <span key={`${title}-${index}`} style={{ height: `${Math.max(12, (value / max) * 100)}%` }} />
+      <div className="column-chart">
+        {items.map(([label, value]) => (
+          <div key={`${title}-${label}`}>
+            <strong>{value}</strong>
+            <i style={{ height: `${Math.max(12, (value / max) * 100)}%` }} />
+            <span>{label}</span>
+          </div>
         ))}
       </div>
+      {unit && <p className="chart-note">Đơn vị: {unit}</p>}
     </article>
   );
 }
@@ -1974,7 +2184,7 @@ function OpsOverallScore({ score, totalViews }: Readonly<{ score: number; totalV
         <strong>{score}%</strong>
       </div>
       <div className="score-foot">
-        <span>{Intl.NumberFormat("vi-VN").format(totalViews)} lượt xem CMS</span>
+        <span>{Intl.NumberFormat("vi-VN").format(totalViews)} lượt xem nội dung</span>
         <span>2 cảnh báo cần theo dõi</span>
       </div>
     </article>
@@ -2010,7 +2220,7 @@ function OpsPipelineCard({ item }: Readonly<{ item: PipelineStandard }>) {
   );
 }
 
-function OpsBarChart({ title, items }: Readonly<{ title: string; items: ReadonlyArray<readonly [string, number]> }>) {
+function OpsBarChart({ title, items, unit }: Readonly<{ title: string; items: ReadonlyArray<readonly [string, number]>; unit?: string }>) {
   const max = Math.max(...items.map((item) => item[1]), 1);
   return (
     <article className="ops-card">
@@ -2020,7 +2230,7 @@ function OpsBarChart({ title, items }: Readonly<{ title: string; items: Readonly
           <div key={label}>
             <span>{label}</span>
             <i style={{ width: `${(value / max) * 100}%` }} />
-            <strong>{value}</strong>
+            <strong>{value}{unit ? ` ${unit}` : ""}</strong>
           </div>
         ))}
       </div>
@@ -2028,12 +2238,17 @@ function OpsBarChart({ title, items }: Readonly<{ title: string; items: Readonly
   );
 }
 
-function OpsDonut({ title, value }: Readonly<{ title: string; value: number }>) {
+function OpsDonut({ title, value, label, restLabel }: Readonly<{ title: string; value: number; label: string; restLabel: string }>) {
+  const rest = Math.max(0, 100 - value);
   return (
     <article className="ops-card donut-card">
       <h3>{title}</h3>
-      <div className="donut" style={{ background: `conic-gradient(var(--teal) ${value}%, #edf2f0 0)` }}>
+      <div className="donut" style={{ background: `conic-gradient(var(--teal) 0 ${value}%, var(--amber) ${value}% ${Math.min(100, value + rest)}%)` }}>
         <strong>{value}%</strong>
+      </div>
+      <div className="donut-legend">
+        <span><i />{label}: {value}%</span>
+        <span><i />{restLabel}: {rest}%</span>
       </div>
     </article>
   );
