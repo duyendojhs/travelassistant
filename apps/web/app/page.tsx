@@ -74,6 +74,10 @@ const vietnameseStatus: Record<string, string> = {
 const emptySources: readonly Citation[] = [];
 const emptyChunks: readonly SourceChunk[] = [];
 
+function canUseOperations(role: string | null | undefined): boolean {
+  return role === "editor" || role === "admin" || role === "root";
+}
+
 export default function Home() {
   const [active, setActive] = useState<Workspace>("ask");
   const [session, setSession] = useState<AuthSession | null>(null);
@@ -82,6 +86,7 @@ export default function Home() {
   const [latestChunks, setLatestChunks] = useState<readonly SourceChunk[]>(emptyChunks);
   const accessToken = session?.accessToken;
   const canShowSources = active === "ask" || active === "voice";
+  const visibleWorkspaces = workspaces.filter((workspace) => workspace.id !== "admin" || canUseOperations(session?.user.role));
 
   useEffect(() => {
     const timer = window.setTimeout(() => setSession(readSession()), 0);
@@ -99,7 +104,29 @@ export default function Home() {
     return () => window.removeEventListener("travelassistant:auth-expired", handleAuthExpired);
   }, []);
 
+  useEffect(() => {
+    if (active === "admin" && !canUseOperations(session?.user.role)) {
+      setActive("ask");
+    }
+  }, [active, session?.user.role]);
+
   const activeLabel = workspaces.find((item) => item.id === active)?.label ?? "TravelAssistant";
+
+  if (!session) {
+    return (
+      <main className="login-page-shell">
+        <AuthWorkspace
+          session={null}
+          onSessionChange={(nextSession) => {
+            setSession(nextSession);
+            if (nextSession) {
+              setActive("ask");
+            }
+          }}
+        />
+      </main>
+    );
+  }
 
   return (
     <main className="app-shell">
@@ -115,7 +142,7 @@ export default function Home() {
         </button>
 
         <nav className="nav-stack" aria-label="Khu vực làm việc">
-          {workspaces.map((workspace) => (
+          {visibleWorkspaces.map((workspace) => (
             <button
               key={workspace.id}
               className={`nav-item ${active === workspace.id ? "is-active" : ""}`}
@@ -193,7 +220,7 @@ export default function Home() {
             )}
             {active === "explore" && <ExploreWorkspace />}
             {active === "trips" && <TripsWorkspace accessToken={accessToken} onAuthNeeded={() => setActive("account")} />}
-            {active === "admin" && <AdminWorkspace accessToken={accessToken} userRole={session?.user.role ?? null} onAuthNeeded={() => setActive("account")} />}
+            {active === "admin" && canUseOperations(session?.user.role) && <AdminWorkspace accessToken={accessToken} userRole={session.user.role} onAuthNeeded={() => setActive("account")} />}
             {active === "account" && <AuthWorkspace session={session} onSessionChange={setSession} />}
           </div>
 
@@ -1150,10 +1177,11 @@ function AuthWorkspace({
   onSessionChange
 }: Readonly<{ session: AuthSession | null; onSessionChange: (session: AuthSession | null) => void }>) {
   const [mode, setMode] = useState<"login" | "register">("login");
-  const [email, setEmail] = useState("admin@example.com");
-  const [password, setPassword] = useState("a-strong-local-password");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const isGate = session === null;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1171,6 +1199,62 @@ function AuthWorkspace({
       setError(toErrorMessage(caught));
       setState("error");
     }
+  }
+
+  if (isGate) {
+    return (
+      <section className="login-gate" aria-label="Đăng nhập TravelAssistant">
+        <div className="login-visual">
+          <div className="login-brand" aria-label="TravelAssistant">
+            <span>TA</span>
+            <strong>TravelAssistant</strong>
+          </div>
+          <div className="login-copy">
+            <h1>Trợ lý du lịch của bạn</h1>
+            <p>Đăng nhập để hỏi bằng giọng nói, tạo lịch trình và lưu chuyến đi với nguồn tham khảo rõ ràng.</p>
+          </div>
+          <div className="login-proof" aria-label="Tính năng chính">
+            <span>Voice</span>
+            <span>Lịch trình</span>
+            <span>Nguồn dẫn</span>
+          </div>
+        </div>
+
+        <form className="login-card-panel" onSubmit={submit}>
+          <div className="segmented">
+            <button className={mode === "login" ? "is-active" : ""} type="button" onClick={() => setMode("login")}>
+              Đăng nhập
+            </button>
+            <button className={mode === "register" ? "is-active" : ""} type="button" onClick={() => setMode("register")}>
+              Tạo tài khoản
+            </button>
+          </div>
+          <div>
+            <h2>{mode === "login" ? "Chào mừng quay lại" : "Tạo tài khoản mới"}</h2>
+            <p>{mode === "login" ? "Tiếp tục chuyến đi đang lưu." : "Tạo tài khoản user để bắt đầu dùng trợ lý."}</p>
+          </div>
+          <label>
+            <span>Email</span>
+            <input autoComplete="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required />
+          </label>
+          <label>
+            <span>Mật khẩu</span>
+            <input
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Tối thiểu 8 ký tự"
+              required
+            />
+          </label>
+          <button className="primary-button wide" type="submit" disabled={state === "loading"}>
+            {state === "loading" ? "Đang xử lý" : mode === "login" ? "Đăng nhập" : "Tạo tài khoản"}
+          </button>
+          {error && <ErrorNote message={error} />}
+        </form>
+      </section>
+    );
   }
 
   return (
