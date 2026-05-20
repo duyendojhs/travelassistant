@@ -13,6 +13,7 @@ import type {
   SavedItinerary,
   SearchResult,
   SourceChunk,
+  VoiceEvent,
   VoiceJob
 } from "@travelassistant/shared";
 
@@ -30,6 +31,7 @@ type LoadState = "idle" | "loading" | "ready" | "error";
 type IconName =
   | "message"
   | "mic"
+  | "plus"
   | "route"
   | "map"
   | "bag"
@@ -40,17 +42,34 @@ type IconName =
   | "source"
   | "upload"
   | "play"
+  | "copy"
+  | "thumbUp"
+  | "thumbDown"
+  | "pin"
+  | "wave"
+  | "close"
   | "logout";
 
 const workspaces: ReadonlyArray<{ id: Workspace; label: string; icon: IconName }> = [
   { id: "ask", label: "Hỏi đáp", icon: "message" },
   { id: "plan", label: "Lịch trình", icon: "route" },
-  { id: "voice", label: "Giọng nói", icon: "mic" },
   { id: "explore", label: "Khám phá", icon: "map" },
   { id: "trips", label: "Đã lưu", icon: "bag" },
-  { id: "admin", label: "Vận hành", icon: "chart" },
-  { id: "account", label: "Tài khoản", icon: "user" }
+  { id: "admin", label: "Vận hành", icon: "chart" }
 ];
+
+type ThreadSummary = Readonly<{
+  id: string;
+  title: string;
+  updatedAt: string;
+  pinned: boolean;
+}>;
+
+type ConversationMessage = ChatMessage & {
+  uiOrigin?: "chat" | "voice";
+  voiceEvents?: VoiceEvent[];
+  audioUrl?: string | null;
+};
 
 const quickPrompts = [
   "Lên lịch trình Đà Nẵng 3 ngày cho gia đình",
@@ -84,6 +103,9 @@ export default function Home() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [latestCitations, setLatestCitations] = useState<readonly Citation[]>(emptySources);
   const [latestChunks, setLatestChunks] = useState<readonly SourceChunk[]>(emptyChunks);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [chatResetKey, setChatResetKey] = useState(0);
+  const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const accessToken = session?.accessToken;
   const canShowSources = active === "ask" || active === "voice";
   const visibleWorkspaces = workspaces.filter((workspace) => workspace.id !== "admin" || canUseOperations(session?.user.role));
@@ -110,7 +132,39 @@ export default function Home() {
     }
   }, [active, session?.user.role]);
 
-  const activeLabel = workspaces.find((item) => item.id === active)?.label ?? "TravelAssistant";
+  function logout() {
+    clearSession();
+    setSession(null);
+    setAccountMenuOpen(false);
+    setActive("account");
+  }
+
+  function rememberThread(id: string, title: string) {
+    setThreads((items) => {
+      const existing = items.find((item) => item.id === id);
+      const next: ThreadSummary = {
+        id,
+        title: title || "Đoạn chat mới",
+        updatedAt: new Date().toISOString(),
+        pinned: existing?.pinned ?? false
+      };
+      return [next, ...items.filter((item) => item.id !== id)].slice(0, 18);
+    });
+  }
+
+  function toggleThreadPin(id: string) {
+    setThreads((items) => items.map((item) => (item.id === id ? { ...item, pinned: !item.pinned } : item)));
+  }
+
+  function startNewChat() {
+    setActive("ask");
+    setDrawerOpen(false);
+    setLatestCitations(emptySources);
+    setLatestChunks(emptyChunks);
+    setChatResetKey((value) => value + 1);
+  }
+
+  const sortedThreads = [...threads].sort((a, b) => Number(b.pinned) - Number(a.pinned) || new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 
   if (!session) {
     return (
@@ -131,15 +185,27 @@ export default function Home() {
   return (
     <main className="app-shell">
       <aside className="side-nav" aria-label="Điều hướng chính">
-        <button className="brand-lockup" type="button" onClick={() => setActive("ask")}>
-          <span className="brand-mark" aria-hidden="true">
-            TA
-          </span>
-          <span>
-            <strong>TravelAssistant</strong>
-            <small>{session ? session.user.email : "Chưa đăng nhập"}</small>
-          </span>
-        </button>
+        <div className="account-zone">
+          <button className="brand-lockup" type="button" onClick={() => setAccountMenuOpen((value) => !value)} aria-expanded={accountMenuOpen}>
+            <UserAvatar />
+            <span>
+              <strong>{session.user.email.split("@")[0] || "Tài khoản"}</strong>
+              <small>{session.user.email}</small>
+            </span>
+          </button>
+          {accountMenuOpen && (
+            <div className="account-popover">
+              <div>
+                <strong>{session.user.email}</strong>
+                <small>{session.user.role}</small>
+              </div>
+              <button type="button" onClick={logout}>
+                <Icon name="logout" />
+                Đăng xuất
+              </button>
+            </div>
+          )}
+        </div>
 
         <nav className="nav-stack" aria-label="Khu vực làm việc">
           {visibleWorkspaces.map((workspace) => (
@@ -156,54 +222,56 @@ export default function Home() {
           ))}
         </nav>
 
-        <BackendBadge />
+        <section className="chat-history-panel" aria-label="Lịch sử chat">
+          <div className="history-head">
+            <span>Lịch sử</span>
+            <button type="button" onClick={startNewChat} title="Đoạn chat mới">
+              <Icon name="plus" />
+            </button>
+          </div>
+          <div className="history-list">
+            {sortedThreads.length === 0 && <p>Chưa có đoạn chat.</p>}
+            {sortedThreads.map((thread) => (
+              <article key={thread.id} className={thread.pinned ? "is-pinned" : ""}>
+                <button type="button" onClick={() => setActive("ask")}>
+                  {thread.title}
+                </button>
+                <button type="button" onClick={() => toggleThreadPin(thread.id)} title={thread.pinned ? "Bỏ ghim" : "Ghim"}>
+                  <Icon name="pin" />
+                </button>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <button className="mobile-account-button" type="button" onClick={() => setAccountMenuOpen((value) => !value)} aria-label="Tài khoản">
+          <Icon name="user" />
+        </button>
+        {accountMenuOpen && (
+          <div className="mobile-account-popover">
+            <strong>{session.user.email}</strong>
+            <button type="button" onClick={logout}>
+              <Icon name="logout" />
+              Đăng xuất
+            </button>
+          </div>
+        )}
       </aside>
 
       <section className="workspace">
-        <header className="top-bar">
-          <div>
-            <p className="eyeless">{activeLabel}</p>
-            <h1>{active === "account" ? "Tài khoản" : activeLabel}</h1>
-          </div>
-          <div className="top-actions">
-            {canShowSources && (
-              <button className="ghost-button" type="button" onClick={() => setDrawerOpen((value) => !value)}>
-                <Icon name="source" />
-                Nguồn
-              </button>
-            )}
-            {session ? (
-              <button
-                className="ghost-button"
-                type="button"
-                onClick={() => {
-                  clearSession();
-                  setSession(null);
-                  setActive("account");
-                }}
-              >
-                <Icon name="logout" />
-                Đăng xuất
-              </button>
-            ) : (
-              <button className="primary-button" type="button" onClick={() => setActive("account")}>
-                Đăng nhập
-              </button>
-            )}
-          </div>
-        </header>
-
         <div className={`workspace-grid ${drawerOpen && canShowSources ? "has-drawer" : ""}`}>
           <div className="workspace-surface">
             {active === "ask" && (
               <ChatWorkspace
                 accessToken={accessToken}
+                resetKey={chatResetKey}
                 onAuthNeeded={() => setActive("account")}
+                onThreadUpdate={rememberThread}
                 onSources={(citations, chunks) => {
                   setLatestCitations(citations);
                   setLatestChunks(chunks);
-                  setDrawerOpen(true);
                 }}
+                onOpenSources={() => setDrawerOpen(true)}
               />
             )}
             {active === "plan" && <PlannerWorkspace accessToken={accessToken} onAuthNeeded={() => setActive("account")} />}
@@ -214,7 +282,6 @@ export default function Home() {
                 onSources={(citations, chunks) => {
                   setLatestCitations(citations);
                   setLatestChunks(chunks);
-                  setDrawerOpen(true);
                 }}
               />
             )}
@@ -224,10 +291,40 @@ export default function Home() {
             {active === "account" && <AuthWorkspace session={session} onSessionChange={setSession} />}
           </div>
 
-          {canShowSources && <SourceDrawer open={drawerOpen} citations={latestCitations} chunks={latestChunks} onClose={() => setDrawerOpen(false)} />}
+          {canShowSources && <SourceDrawer open={drawerOpen} citations={latestCitations} chunks={latestChunks} showScores={canUseOperations(session.user.role)} onClose={() => setDrawerOpen(false)} />}
         </div>
       </section>
     </main>
+  );
+}
+
+function TravelLogo() {
+  return (
+    <span className="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 48 48" role="img">
+        <defs>
+          <linearGradient id="travel-logo-gradient" x1="8" x2="40" y1="8" y2="40" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#0B7F78" />
+            <stop offset="1" stopColor="#D85D45" />
+          </linearGradient>
+        </defs>
+        <path d="M24 5c7.9 0 14.3 6.4 14.3 14.2 0 10.5-14.3 23.8-14.3 23.8S9.7 29.7 9.7 19.2C9.7 11.4 16.1 5 24 5Z" fill="url(#travel-logo-gradient)" />
+        <path d="M17.3 20.2c4.2-6.9 10.3 4.8 15.1-2.3" fill="none" stroke="white" strokeLinecap="round" strokeWidth="3.2" />
+        <circle cx="24" cy="18.9" r="3.9" fill="white" />
+      </svg>
+    </span>
+  );
+}
+
+function UserAvatar() {
+  return (
+    <span className="user-avatar" aria-hidden="true">
+      <svg viewBox="0 0 48 48" role="img">
+        <circle cx="24" cy="24" r="22" fill="#1877F2" />
+        <circle cx="24" cy="18" r="7" fill="white" />
+        <path d="M11 39c2.4-8 7-12 13-12s10.6 4 13 12" fill="white" />
+      </svg>
+    </span>
   );
 }
 
@@ -252,26 +349,92 @@ function BackendBadge() {
 
 function ChatWorkspace({
   accessToken,
+  resetKey,
   onAuthNeeded,
-  onSources
+  onThreadUpdate,
+  onSources,
+  onOpenSources
 }: Readonly<{
   accessToken?: string;
+  resetKey: number;
   onAuthNeeded: () => void;
+  onThreadUpdate: (id: string, title: string) => void;
   onSources: (citations: readonly Citation[], chunks: readonly SourceChunk[]) => void;
+  onOpenSources: () => void;
 }>) {
   const [question, setQuestion] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [state, setState] = useState<LoadState>("idle");
+  const [voiceState, setVoiceState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [lastAssistant, setLastAssistant] = useState<ChatMessage | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [voiceLevel, setVoiceLevel] = useState(0);
+  const [attachmentName, setAttachmentName] = useState<string | null>(null);
+  const [job, setJob] = useState<VoiceJob | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const speechStartedRef = useRef(false);
+  const lastVoiceAtRef = useRef(0);
 
   useEffect(() => {
-    if (messages.length > 0 || state === "loading") {
+    if (messages.length > 0 || state === "loading" || voiceState === "loading") {
       chatEndRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
     }
-  }, [messages, state]);
+  }, [messages, state, voiceState]);
+
+  useEffect(() => {
+    setQuestion("");
+    setSessionId(null);
+    setMessages([]);
+    setState("idle");
+    setVoiceState("idle");
+    setError(null);
+    setJob(null);
+    setAttachmentName(null);
+    cleanupRecordingResources();
+  }, [resetKey]);
+
+  useEffect(() => {
+    return () => cleanupRecordingResources();
+  }, []);
+
+  function cleanupRecordingResources() {
+    if (animationFrameRef.current !== null) {
+      window.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    audioContextRef.current?.close().catch(() => undefined);
+    audioContextRef.current = null;
+    recorderRef.current?.stream.getTracks().forEach((track) => track.stop());
+    recorderRef.current = null;
+    setVoiceLevel(0);
+  }
+
+  function makeLocalMessage(partial: Pick<ConversationMessage, "role" | "content"> & Partial<ConversationMessage>): ConversationMessage {
+    return {
+      id: partial.id ?? `local-${crypto.randomUUID()}`,
+      session_id: partial.session_id ?? sessionId ?? "local",
+      role: partial.role,
+      content: partial.content,
+      modality: partial.modality ?? "text",
+      idempotency_key: partial.idempotency_key ?? null,
+      citations: partial.citations ?? [],
+      source_chunks: partial.source_chunks ?? [],
+      latency_ms: partial.latency_ms ?? null,
+      model_provider: partial.model_provider ?? null,
+      feedback_state: partial.feedback_state ?? null,
+      created_at: partial.created_at ?? new Date().toISOString(),
+      uiOrigin: partial.uiOrigin,
+      voiceEvents: partial.voiceEvents,
+      audioUrl: partial.audioUrl
+    };
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -296,65 +459,236 @@ function ChatWorkspace({
         idempotency_key: `web-${crypto.randomUUID()}`
       });
       setMessages((items) => [...items, exchange.user_message, exchange.assistant_message]);
-      setLastAssistant(exchange.assistant_message);
+      onThreadUpdate(activeSession.id, content.slice(0, 60));
       onSources(exchange.assistant_message.citations, exchange.assistant_message.source_chunks);
       setState("ready");
+      setAttachmentName(null);
     } catch (caught) {
       setError(toErrorMessage(caught));
       setState("error");
     }
   }
 
-  async function sendFeedback(feedback: FeedbackState) {
-    if (!accessToken || !lastAssistant) {
+  async function sendFeedback(message: ConversationMessage, feedback: FeedbackState) {
+    if (message.uiOrigin === "voice") {
+      setMessages((items) => items.map((item) => (item.id === message.id ? { ...item, feedback_state: feedback } : item)));
+      return;
+    }
+    if (!accessToken) {
       return;
     }
     try {
-      const updated = await createChatClient(accessToken).sendFeedback(lastAssistant.id, feedback);
-      setLastAssistant(updated);
+      const updated = await createChatClient(accessToken).sendFeedback(message.id, feedback);
       setMessages((items) => items.map((item) => (item.id === updated.id ? updated : item)));
     } catch (caught) {
       setError(toErrorMessage(caught));
     }
   }
 
+  function getRecorderOptions(): MediaRecorderOptions | undefined {
+    const preferredTypes = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/webm", "audio/ogg"];
+    const mimeType = preferredTypes.find((type) => MediaRecorder.isTypeSupported(type));
+    return mimeType ? { mimeType } : undefined;
+  }
+
+  async function startVoice() {
+    if (!accessToken) {
+      onAuthNeeded();
+      return;
+    }
+    setError(null);
+    speechStartedRef.current = false;
+    lastVoiceAtRef.current = performance.now();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, getRecorderOptions());
+      const audioContext = new AudioContext();
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 1024;
+      source.connect(analyser);
+      audioContextRef.current = audioContext;
+      chunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunksRef.current.push(event.data);
+        }
+      };
+      recorder.onstop = () => {
+        const mimeType = recorder.mimeType || chunksRef.current[0]?.type || "audio/webm";
+        const extension = mimeType.includes("ogg") ? "ogg" : "webm";
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+        const file = new File([blob], `voice-${Date.now()}.${extension}`, { type: blob.type });
+        cleanupRecordingResources();
+        setRecording(false);
+        if (blob.size > 0) {
+          void submitVoiceFile(file);
+        }
+      };
+      recorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+      monitorSilence(analyser);
+    } catch (caught) {
+      setError(toErrorMessage(caught));
+    }
+  }
+
+  function monitorSilence(analyser: AnalyserNode) {
+    const samples = new Uint8Array(analyser.fftSize);
+    const startedAt = performance.now();
+    function tick() {
+      analyser.getByteTimeDomainData(samples);
+      let total = 0;
+      for (const sample of samples) {
+        const value = (sample - 128) / 128;
+        total += value * value;
+      }
+      const rms = Math.sqrt(total / samples.length);
+      setVoiceLevel(Math.min(1, rms * 8));
+      const now = performance.now();
+      if (rms > 0.028) {
+        speechStartedRef.current = true;
+        lastVoiceAtRef.current = now;
+      }
+      if (speechStartedRef.current && now - lastVoiceAtRef.current > 1200) {
+        stopVoice();
+        return;
+      }
+      if (!speechStartedRef.current && now - startedAt > 10000) {
+        setError("Chưa nghe thấy giọng nói. Hãy thử lại gần micro hơn.");
+        stopVoice();
+        return;
+      }
+      animationFrameRef.current = window.requestAnimationFrame(tick);
+    }
+    animationFrameRef.current = window.requestAnimationFrame(tick);
+  }
+
+  function stopVoice() {
+    recorderRef.current?.stop();
+  }
+
+  async function submitVoiceFile(file: File) {
+    if (!accessToken) {
+      onAuthNeeded();
+      return;
+    }
+    setVoiceState("loading");
+    setError(null);
+    try {
+      const result = await createVoiceClient(accessToken).query(file);
+      const citations = citationsFromRecords(result.citations);
+      const sourceChunks = chunksFromRecords(result.source_chunks);
+      const activeSessionId = sessionId ?? `voice-${result.id}`;
+      setSessionId(activeSessionId);
+      setJob(result);
+      onSources(citations, sourceChunks);
+      onThreadUpdate(activeSessionId, result.transcript || "Câu hỏi bằng giọng nói");
+      setMessages((items) => [
+        ...items,
+        makeLocalMessage({
+          id: `voice-user-${result.id}`,
+          session_id: activeSessionId,
+          role: "user",
+          content: result.transcript || "Câu hỏi bằng giọng nói",
+          modality: "audio",
+          uiOrigin: "voice"
+        }),
+        makeLocalMessage({
+          id: `voice-assistant-${result.id}`,
+          session_id: activeSessionId,
+          role: "assistant",
+          content: result.answer || "Mình chưa nhận được câu trả lời.",
+          modality: "audio",
+          citations,
+          source_chunks: sourceChunks,
+          model_provider: result.provider,
+          uiOrigin: "voice",
+          voiceEvents: result.events,
+          audioUrl: result.output_public_url
+        })
+      ]);
+      if (result.output_public_url && audioRef.current) {
+        audioRef.current.src = result.output_public_url;
+        audioRef.current.load();
+        audioRef.current.play().catch(() => undefined);
+      }
+      setVoiceState("ready");
+    } catch (caught) {
+      setError(toErrorMessage(caught));
+      setVoiceState("error");
+    }
+  }
+
+  function openMessageSources(message: ConversationMessage) {
+    onSources(message.citations, message.source_chunks);
+    onOpenSources();
+  }
+
+  function playMessageAudio(message: ConversationMessage) {
+    if (!message.audioUrl || !audioRef.current) {
+      return;
+    }
+    audioRef.current.src = message.audioUrl;
+    audioRef.current.currentTime = 0;
+    audioRef.current.play().catch(() => undefined);
+  }
+
+  const hasConversation = messages.length > 0;
+  const latestEvents = job?.events ?? [];
+
   return (
-    <section className="chat-layout" aria-label="Hỏi đáp">
+    <section className={`chat-layout ${hasConversation ? "has-messages" : "is-empty"}`} aria-label="Hỏi đáp">
+      <VoicePipeline events={latestEvents} recording={recording} loading={voiceState === "loading"} />
       <div className="conversation-panel">
-        <div className="panel-head">
-          <div>
-            <h2>Hỏi chuyến đi</h2>
-            <p>Đặt câu hỏi, nhận câu trả lời và xem nguồn ngay bên cạnh.</p>
-          </div>
-          <ConnectionPill active={Boolean(accessToken)} />
-        </div>
-
-        <div className="quick-row" aria-label="Gợi ý nhanh">
-          {quickPrompts.map((prompt) => (
-            <button key={prompt} type="button" onClick={() => setQuestion(prompt)}>
-              {prompt}
-            </button>
-          ))}
-        </div>
-
         <div className="message-list" aria-live="polite">
           {messages.length === 0 && (
-            <EmptyState
-              title="Bắt đầu bằng một câu hỏi cụ thể"
-              text="Ví dụ: lịch trình 3 ngày, món nên ăn, nơi ít đông hoặc so sánh hai điểm đến."
-            />
+            <div className="chat-empty">
+              <TravelLogo />
+              <h1>Khi bạn sẵn sàng là chúng ta có thể bắt đầu.</h1>
+              <div className="quick-row" aria-label="Gợi ý nhanh">
+                {quickPrompts.map((prompt) => (
+                  <button key={prompt} type="button" onClick={() => setQuestion(prompt)}>
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
           {messages.map((message) => (
             <article key={message.id} className={`message-bubble ${message.role === "user" ? "user" : "assistant"}`}>
               <span>{message.role === "user" ? "Bạn" : "TravelAssistant"}</span>
               <p>{message.content}</p>
-              {message.citations.length > 0 && <small>{message.citations.length} nguồn</small>}
+              {message.role === "assistant" && (
+                <div className="message-actions">
+                  <button type="button" onClick={() => navigator.clipboard.writeText(message.content).catch(() => undefined)} title="Sao chép">
+                    <Icon name="copy" />
+                  </button>
+                  <button type="button" onClick={() => sendFeedback(message, "helpful")} className={message.feedback_state === "helpful" ? "is-selected" : ""} title="Tốt">
+                    <Icon name="thumbUp" />
+                  </button>
+                  <button type="button" onClick={() => sendFeedback(message, "not_helpful")} className={message.feedback_state === "not_helpful" ? "is-selected" : ""} title="Chưa ổn">
+                    <Icon name="thumbDown" />
+                  </button>
+                  {message.audioUrl && (
+                    <button type="button" onClick={() => playMessageAudio(message)} title="Nghe lại">
+                      <Icon name="play" />
+                    </button>
+                  )}
+                  {(message.citations.length > 0 || message.source_chunks.length > 0) && (
+                    <button type="button" onClick={() => openMessageSources(message)} title="Nguồn">
+                      <Icon name="source" />
+                    </button>
+                  )}
+                </div>
+              )}
             </article>
           ))}
-          {state === "loading" && (
+          {(state === "loading" || voiceState === "loading") && (
             <article className="message-bubble assistant is-streaming">
               <span>TravelAssistant</span>
-              <p>Đang đọc dữ liệu và tạo câu trả lời...</p>
+              <p>{voiceState === "loading" ? "Đang nghe và chuẩn bị câu trả lời..." : "Đang đọc dữ liệu và tạo câu trả lời..."}</p>
               <div className="typing-dots" aria-hidden="true">
                 <i />
                 <i />
@@ -366,6 +700,22 @@ function ChatWorkspace({
         </div>
 
         <form className="composer" onSubmit={submit}>
+          {attachmentName && (
+            <button className="attachment-chip" type="button" onClick={() => setAttachmentName(null)}>
+              {attachmentName}
+              <Icon name="close" />
+            </button>
+          )}
+          <button className="composer-icon-button" type="button" onClick={() => fileInputRef.current?.click()} title="Thêm ảnh">
+            <Icon name="plus" />
+          </button>
+          <input
+            ref={fileInputRef}
+            className="hidden-file-input"
+            accept="image/*"
+            type="file"
+            onChange={(event) => setAttachmentName(event.target.files?.[0]?.name ?? null)}
+          />
           <label className="sr-only" htmlFor="chat-question">
             Câu hỏi
           </label>
@@ -373,44 +723,61 @@ function ChatWorkspace({
             id="chat-question"
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
-            placeholder={accessToken ? "Hỏi về chuyến đi của bạn..." : "Đăng nhập để hỏi"}
-            rows={3}
+            placeholder={accessToken ? "Hỏi bất kỳ điều gì" : "Đăng nhập để hỏi"}
+            rows={1}
           />
-          <button className="send-button" type="submit" disabled={state === "loading"}>
-            <Icon name="send" />
-            {state === "loading" ? "Đang gửi" : "Gửi"}
+          <button
+            className={`composer-icon-button mic-button ${recording ? "is-recording" : ""}`}
+            type="button"
+            onClick={() => {
+              if (recording) {
+                stopVoice();
+              } else {
+                void startVoice();
+              }
+            }}
+            title={recording ? "Dừng nghe" : "Nói"}
+          >
+            <Icon name="mic" />
+            <span style={{ transform: `scaleY(${Math.max(0.18, voiceLevel)})` }} />
+          </button>
+          <button className="send-button" type="submit" disabled={state === "loading" || voiceState === "loading"}>
+            <Icon name={question.trim() ? "send" : "wave"} />
           </button>
         </form>
         {error && <ErrorNote message={error} />}
+        <audio ref={audioRef} preload="auto" />
       </div>
-
-      <aside className="insight-rail" aria-label="Thông tin câu trả lời">
-        <Metric label="Nguồn" value={String(lastAssistant?.citations.length ?? 0)} />
-        <Metric label="Độ trễ" value={lastAssistant?.latency_ms ? `${lastAssistant.latency_ms} ms` : "--"} />
-        <Metric label="Mô hình" value={lastAssistant?.model_provider ?? "--"} />
-        <div className="feedback-card">
-          <h3>Đánh giá</h3>
-          <div className="feedback-actions">
-            {[
-              ["helpful", "Hữu ích"],
-              ["not_helpful", "Chưa ổn"],
-              ["wrong_info", "Sai"],
-              ["outdated_info", "Cũ"]
-            ].map(([value, label]) => (
-              <button
-                key={value}
-                className={lastAssistant?.feedback_state === value ? "is-selected" : ""}
-                type="button"
-                disabled={!lastAssistant}
-                onClick={() => sendFeedback(value as FeedbackState)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </aside>
     </section>
+  );
+}
+
+function VoicePipeline({ events, recording, loading }: Readonly<{ events: readonly VoiceEvent[]; recording: boolean; loading: boolean }>) {
+  const visible = recording || loading || events.length > 0;
+  if (!visible) {
+    return null;
+  }
+
+  const order = ["uploaded", "transcribing", "retrieving", "generating", "speaking", "done"];
+  const activeStatuses = new Set(events.map((event) => event.status));
+  const latestStatus = events.at(-1)?.status;
+
+  return (
+    <ol className="voice-pipeline" aria-label="Tiến trình xử lý giọng nói">
+      {order.map((status) => {
+        const event = events.find((item) => item.status === status);
+        const isActive = activeStatuses.has(status) || (recording && status === "transcribing") || (loading && status === latestStatus);
+        return (
+          <li key={status} className={isActive ? "is-active" : ""}>
+            <span aria-hidden="true">
+              <Icon name={status === "transcribing" ? "mic" : status === "done" ? "spark" : "wave"} />
+            </span>
+            <strong>{vietnameseStatus[status]}</strong>
+            <small>{event ? new Date(event.at).toLocaleTimeString("vi-VN") : "--:--"}</small>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -1206,7 +1573,7 @@ function AuthWorkspace({
       <section className="login-gate" aria-label="Đăng nhập TravelAssistant">
         <div className="login-visual">
           <div className="login-brand" aria-label="TravelAssistant">
-            <span>TA</span>
+            <TravelLogo />
             <strong>TravelAssistant</strong>
           </div>
           <div className="login-copy">
@@ -1320,11 +1687,13 @@ function SourceDrawer({
   open,
   citations,
   chunks,
+  showScores,
   onClose
 }: Readonly<{
   open: boolean;
   citations: readonly Citation[];
   chunks: readonly SourceChunk[];
+  showScores: boolean;
   onClose: () => void;
 }>) {
   return (
@@ -1345,7 +1714,12 @@ function SourceDrawer({
             <span>#{citation.id}</span>
             <strong>{citation.title}</strong>
             <p>{citation.heading_path?.join(" / ") ?? citation.source_type}</p>
-            <small>điểm {citation.score.toFixed(3)}</small>
+            {citation.url && (
+              <a href={citation.url} target="_blank" rel="noreferrer">
+                Mở trang nguồn
+              </a>
+            )}
+            {showScores && <small>điểm {citation.score.toFixed(3)}</small>}
           </article>
         ))}
         {chunks.slice(0, 4).map((chunk) => (
@@ -1353,7 +1727,7 @@ function SourceDrawer({
             <span>chunk</span>
             <strong>{chunk.chunk_id}</strong>
             <p>{chunk.content}</p>
-            <small>điểm {chunk.score.toFixed(3)}</small>
+            {showScores && <small>điểm {chunk.score.toFixed(3)}</small>}
           </article>
         ))}
       </div>
@@ -1517,6 +1891,12 @@ function Icon({ name }: Readonly<{ name: IconName }>) {
         <path d="M6 11a6 6 0 0 0 12 0M12 17v3M9 20h6" />
       </>
     ),
+    plus: (
+      <>
+        <path d="M12 5v14" />
+        <path d="M5 12h14" />
+      </>
+    ),
     route: (
       <>
         <path d="M5 18c4-8 10 1 14-8" />
@@ -1574,6 +1954,41 @@ function Icon({ name }: Readonly<{ name: IconName }>) {
       </>
     ),
     play: <path d="M8 5v14l11-7-11-7Z" />,
+    copy: (
+      <>
+        <rect x="8" y="8" width="11" height="11" rx="2" />
+        <path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" />
+      </>
+    ),
+    thumbUp: (
+      <>
+        <path d="M7 10v10H4V10h3Z" />
+        <path d="M7 10l4-7 1.7 1.2a2 2 0 0 1 .7 2.2L12.5 9H19a2 2 0 0 1 2 2.2l-.8 6A3 3 0 0 1 17.2 20H7" />
+      </>
+    ),
+    thumbDown: (
+      <>
+        <path d="M7 14V4H4v10h3Z" />
+        <path d="M7 14l4 7 1.7-1.2a2 2 0 0 0 .7-2.2L12.5 15H19a2 2 0 0 0 2-2.2l-.8-6A3 3 0 0 0 17.2 4H7" />
+      </>
+    ),
+    pin: (
+      <>
+        <path d="m15 4 5 5-3 1-4 4 .5 4.5L11 16l-4 4 4-4-2.5-2.5L13 13l4-4 1-3Z" />
+      </>
+    ),
+    wave: (
+      <>
+        <path d="M4 13c1.8-3.8 4.2-3.8 6 0s4.2 3.8 6 0 3.2-3.8 4 0" />
+        <path d="M4 17c1.8-3.8 4.2-3.8 6 0s4.2 3.8 6 0 3.2-3.8 4 0" />
+      </>
+    ),
+    close: (
+      <>
+        <path d="M6 6l12 12" />
+        <path d="M18 6 6 18" />
+      </>
+    ),
     logout: (
       <>
         <path d="M10 5H6v14h4" />

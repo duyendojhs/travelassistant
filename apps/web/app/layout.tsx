@@ -3,7 +3,10 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "TravelAssistant",
-  description: "A production travel assistant for Vietnam trip planning."
+  description: "A production travel assistant for Vietnam trip planning.",
+  icons: {
+    icon: "/icon.svg"
+  }
 };
 
 type RootLayoutProps = Readonly<{
