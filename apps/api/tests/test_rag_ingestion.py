@@ -131,6 +131,40 @@ def test_embedding_job_indexes_seed_chunks_and_retrieves_sources(
     assert all(chunk.vector_collection == "test_chunks" for chunk in chunks)
 
 
+def test_retrieval_fallback_matches_vietnamese_destination_terms(
+    client_and_db: tuple[TestClient, sessionmaker[Session]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, session_factory = client_and_db
+    tokens = register(client, "editor-hoi-an-rag@example.com")
+    promote_to_editor(session_factory, "editor-hoi-an-rag@example.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    class EmptyVectorStore(InMemoryVectorStore):
+        def search(self, *args: object, **kwargs: object) -> list[object]:
+            return []
+
+    monkeypatch.setattr(
+        dataops_routes,
+        "get_embedding_provider",
+        lambda settings: DeterministicEmbeddingProvider(model="test-embedding", dimensions=8),
+    )
+    monkeypatch.setattr(dataops_routes, "QdrantVectorStore", lambda settings: EmptyVectorStore("test_chunks"))
+
+    response = client.post("/api/v1/dataops/reindex", headers=headers, json={"run_inline": True})
+    assert response.status_code == 201
+
+    preview = client.post(
+        "/api/v1/dataops/retrieval-preview",
+        headers=headers,
+        json={"query": "Ăn gì ở Hội An buổi tối?", "limit": 3},
+    )
+
+    assert preview.status_code == 200
+    slugs = [item["source"]["source_slug"] for item in preview.json()]
+    assert "hoi-an" in slugs
+
+
 def test_ivivu_import_adds_parent_article_and_keypoint_chunks(
     client_and_db: tuple[TestClient, sessionmaker[Session]],
     tmp_path: Path,

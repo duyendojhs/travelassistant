@@ -131,7 +131,7 @@ def _normalize(value: str) -> str:
 
 
 def _query_terms(query: str) -> list[str]:
-    stop_words = {"toi", "minh", "ban", "cho", "hoi", "noi", "ve", "la", "di", "du", "lich", "trinh"}
+    stop_words = {"toi", "minh", "ban", "cho", "noi", "ve", "la", "di", "du", "lich", "trinh"}
     terms = []
     for term in _normalize(query).split():
         if len(term) >= 3 and term not in stop_words:
