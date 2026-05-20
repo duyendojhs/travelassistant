@@ -42,6 +42,14 @@ function assertHttpUrl(value: string, key: string): string {
   return url.toString().replace(/\/$/, "");
 }
 
+function readOptionalHttpUrl(source: PublicEnvSource, key: string, fallback = ""): string {
+  const value = readOptionalEnv(source, key);
+  if (!value) {
+    return fallback;
+  }
+  return assertHttpUrl(value, key);
+}
+
 function assertMapProvider(value: string): MapProvider {
   if (value === "osm" || value === "mapbox") {
     return value;
@@ -59,10 +67,7 @@ export function readPublicEnv(source: PublicEnvSource = defaultPublicEnvSource):
     mapProvider: assertMapProvider(readRequiredEnv(source, "NEXT_PUBLIC_MAP_PROVIDER")),
     mapboxAccessToken: readOptionalEnv(source, "NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN"),
     posthogKey: readOptionalEnv(source, "NEXT_PUBLIC_POSTHOG_KEY"),
-    posthogHost: assertHttpUrl(
-      readRequiredEnv(source, "NEXT_PUBLIC_POSTHOG_HOST"),
-      "NEXT_PUBLIC_POSTHOG_HOST"
-    ),
+    posthogHost: readOptionalHttpUrl(source, "NEXT_PUBLIC_POSTHOG_HOST", "https://app.posthog.com"),
     sentryDsn: readOptionalEnv(source, "NEXT_PUBLIC_SENTRY_DSN")
   };
 }
