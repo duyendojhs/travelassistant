@@ -58,10 +58,8 @@ class RetrievalService:
     ) -> list[VectorSearchHit]:
         try:
             return self.vector_store.search(vector, limit=limit, metadata_filter=metadata_filter)
-        except Exception as exc:
-            if _is_missing_vector_collection(exc):
-                return []
-            raise
+        except Exception:
+            return []
 
     def _database_fallback(self, db: Session, query: str, limit: int) -> list[RetrievedChunk]:
         terms = _query_terms(query)
@@ -146,7 +144,3 @@ def _lexical_score(content: str, terms: list[str]) -> int:
     normalized = _normalize(content)
     return sum(normalized.count(term) for term in terms)
 
-
-def _is_missing_vector_collection(exc: Exception) -> bool:
-    message = str(exc).lower()
-    return "collection" in message and ("not found" in message or "doesn't exist" in message)
