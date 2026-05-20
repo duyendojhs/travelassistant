@@ -32,8 +32,19 @@ R2_PUBLIC_BASE_URL=https://your-api-domain/uploads
 After first deploy:
 
 ```bash
-python -m app.db.create_admin
 python -m app.dataops.reindex_rag
+```
+
+Render Free does not support Blueprint `preDeployCommand`. Run migrations from your local machine against the production `DATABASE_URL` before deploying schema changes:
+
+```bash
+python -m alembic -c apps/api/alembic.ini upgrade head
+```
+
+Create or rotate the production admin from your local machine:
+
+```bash
+python -m app.db.create_admin
 ```
 
 For admin creation, set these only for the command/runtime where you create the admin:

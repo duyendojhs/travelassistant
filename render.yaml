@@ -6,7 +6,6 @@ services:
     dockerfilePath: apps/api/Dockerfile
     dockerContext: .
     healthCheckPath: /health
-    preDeployCommand: python -m alembic -c apps/api/alembic.ini upgrade head
     envVars:
       - key: APP_ENV
         value: production
