@@ -16,6 +16,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+*.log
 
 # Python
 .venv/
@@ -43,6 +44,8 @@ minio_data/
 media/
 uploads/
 exports/
+output/
+test-results/
 *.wav
 *.mp3
 *.webm
