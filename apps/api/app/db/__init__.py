@@ -1,0 +1,1 @@
+"""Database setup for TravelAssistant."""

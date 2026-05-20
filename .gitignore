@@ -1,0 +1,55 @@
+# Secrets
+.env
+.env.*
+!.env.example
+apps/web/.env.local
+apps/web/.env.*.local
+
+# Node
+node_modules/
+.next/
+out/
+dist/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Local databases and generated runtime data
+*.db
+*.sqlite
+*.sqlite3
+data/raw/
+data/processed/
+data/uploads/
+data/logs/
+data/chroma_db/
+qdrant_storage/
+minio_data/
+
+# Media and exports
+media/
+uploads/
+exports/
+*.wav
+*.mp3
+*.webm
+*.mp4
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

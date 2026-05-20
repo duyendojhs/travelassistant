@@ -1,0 +1,54 @@
+services:
+  - type: web
+    name: travelassistant-api
+    runtime: docker
+    plan: free
+    dockerfilePath: apps/api/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    preDeployCommand: python -m alembic -c apps/api/alembic.ini upgrade head
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DEFAULT_LLM_PROVIDER
+        value: openai
+      - key: DEFAULT_STT_PROVIDER
+        value: openai
+      - key: DEFAULT_TTS_PROVIDER
+        value: openai
+      - key: LLM_MODEL
+        value: gpt-4.1-nano
+      - key: STT_MODEL
+        value: whisper-1
+      - key: TTS_MODEL
+        value: tts-1
+      - key: EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: EMBEDDING_DIMENSIONS
+        value: "1536"
+      - key: VECTOR_DB_PROVIDER
+        value: qdrant
+      - key: QDRANT_COLLECTION
+        value: travelassistant_chunks
+      - key: OBJECT_STORAGE_PROVIDER
+        value: local
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: PUBLIC_APP_URL
+        sync: false
+      - key: API_BASE_URL
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: R2_PUBLIC_BASE_URL
+        sync: false

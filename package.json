@@ -1,0 +1,30 @@
+{
+  "name": "travelassistant",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Production scaffold for TravelAssistant.",
+  "workspaces": [
+    "apps/web",
+    "packages/shared"
+  ],
+  "scripts": {
+    "dev:web": "npm --workspace @travelassistant/web run dev",
+    "build": "npm run build:web",
+    "build:web": "npm --workspace @travelassistant/web run build",
+    "lint": "npm --workspaces --if-present run lint",
+    "typecheck": "npm --workspaces --if-present run typecheck",
+    "api:dev": ".\\.venv\\Scripts\\python.exe -m uvicorn app.main:app --app-dir apps/api --reload",
+    "api:compile": "python -m compileall apps/api",
+    "api:migrate": ".\\.venv\\Scripts\\python.exe -m alembic -c apps/api/alembic.ini upgrade head",
+    "api:seed": ".\\.venv\\Scripts\\python.exe -m app.db.seed",
+    "api:create-admin": ".\\.venv\\Scripts\\python.exe -m app.db.create_admin",
+    "api:import-ivivu": ".\\.venv\\Scripts\\python.exe -m app.dataops.import_ivivu",
+    "api:reindex-rag": ".\\.venv\\Scripts\\python.exe -m app.dataops.reindex_rag"
+  },
+  "engines": {
+    "node": ">=20.11.0",
+    "npm": ">=10.0.0",
+    "python": ">=3.10"
+  },
+  "packageManager": "npm@10.9.2"
+}

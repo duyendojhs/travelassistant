@@ -1,0 +1,4 @@
+interface:
+  display_name: "TravelAssistant Production"
+  short_description: "Build TravelAssistant in safe production steps"
+  default_prompt: "Use $travelassistant-production to build TravelAssistant from the project steps without hard-coded secrets or absolute paths."
