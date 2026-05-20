@@ -5,7 +5,7 @@ services:
     plan: free
     dockerfilePath: apps/api/Dockerfile
     dockerContext: .
-    healthCheckPath: /health
+    healthCheckPath: /api/v1/health
     envVars:
       - key: APP_ENV
         value: production
