@@ -20,6 +20,7 @@ import { createAdminClient } from "../lib/admin-client";
 import { createAuthClient, type AuthSession } from "../lib/auth-client";
 import { createChatClient } from "../lib/chat-client";
 import { createContentClient } from "../lib/content-client";
+import { readPublicEnv } from "../lib/env";
 import { createItineraryClient, type ItineraryGeneratePayload } from "../lib/itinerary-client";
 import { clearSession, readSession, saveSession } from "../lib/session-store";
 import { createVoiceClient } from "../lib/voice-client";
@@ -208,7 +209,7 @@ function BackendBadge() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch("http://localhost:8000/health", { signal: controller.signal })
+    fetch(`${readPublicEnv().apiBaseUrl}/health`, { signal: controller.signal })
       .then((response) => setState(response.ok ? "ready" : "error"))
       .catch(() => setState("error"));
     return () => controller.abort();
