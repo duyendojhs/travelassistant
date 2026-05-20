@@ -1163,10 +1163,106 @@ select:focus {
 .explore-grid,
 .auth-shell {
   display: grid;
-  grid-template-columns: minmax(280px, 0.75fr) minmax(0, 1.25fr);
-  gap: 12px;
+  grid-template-columns: minmax(260px, 0.48fr) minmax(0, 1fr);
+  gap: 0;
   min-height: 0;
   height: 100%;
+}
+
+.planner-grid {
+  background:
+    radial-gradient(circle at 76% 12%, rgba(11, 127, 120, 0.08), transparent 28%),
+    #ffffff;
+}
+
+.planner-form {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  border: 0;
+  border-right: 1px solid #ecefed;
+  border-radius: 0;
+  background: #fbfcfc;
+  box-shadow: none;
+  padding: clamp(18px, 2vw, 26px);
+  overflow: auto;
+}
+
+.planner-form-head {
+  display: grid;
+  gap: 6px;
+}
+
+.planner-form-head span,
+.day-detail-head span,
+.trip-side span {
+  color: var(--teal-dark);
+  font-size: 0.74rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.planner-form-head h1 {
+  margin: 0;
+  font-size: clamp(1.45rem, 2vw, 1.95rem);
+  line-height: 1.08;
+}
+
+.planner-form-head p {
+  margin-bottom: 0;
+  font-size: 0.92rem;
+}
+
+.destination-pills,
+.interest-pills,
+.day-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.destination-pills button,
+.interest-pills button,
+.day-tabs button {
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: white;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 820;
+  line-height: 1.1;
+  transition:
+    border-color var(--fast),
+    background var(--fast),
+    color var(--fast),
+    transform var(--fast);
+}
+
+.destination-pills button,
+.interest-pills button {
+  min-height: 32px;
+  padding: 0 12px;
+}
+
+.destination-pills button:hover,
+.destination-pills button.is-active,
+.interest-pills button:hover,
+.day-tabs button:hover,
+.day-tabs button.is-active {
+  border-color: rgba(11, 127, 120, 0.35);
+  background: var(--mint);
+  color: var(--teal-dark);
+  transform: translateY(-1px);
+}
+
+.planner-compact-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .planner-form label,
@@ -1179,6 +1275,13 @@ select:focus {
   font-weight: 780;
 }
 
+.planner-form select,
+.planner-form input {
+  min-height: 42px;
+  border-radius: 12px;
+  background: white;
+}
+
 .form-pair {
   align-items: end;
 }
@@ -1188,64 +1291,228 @@ select:focus {
 }
 
 .timeline-panel {
-  min-height: 520px;
-}
-
-.timeline-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.timeline-list {
   display: grid;
-  gap: 10px;
+  align-content: start;
+  gap: 16px;
+  min-height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: clamp(18px, 3vw, 34px);
+  overflow: auto;
 }
 
-.day-card {
+.planner-empty {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 14px;
+  min-height: 72vh;
+  text-align: center;
+}
+
+.planner-empty h2 {
+  margin: 0;
+  font-size: clamp(1.4rem, 2.5vw, 2.25rem);
+}
+
+.planner-empty p {
+  max-width: 520px;
+  margin-bottom: 0;
+}
+
+.planner-map-preview {
   position: relative;
+  width: min(440px, 86vw);
+  aspect-ratio: 16 / 8;
   overflow: hidden;
-  background: white;
-  transition:
-    box-shadow var(--fast),
-    transform var(--fast);
+  border: 1px solid #e3ebe8;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 24% 38%, rgba(216, 93, 69, 0.16), transparent 18%),
+    radial-gradient(circle at 74% 30%, rgba(11, 127, 120, 0.18), transparent 18%),
+    linear-gradient(135deg, #f4faf8, #ffffff);
+  box-shadow: 0 28px 70px rgba(22, 33, 31, 0.08);
 }
 
-.day-card:hover {
-  box-shadow: 0 12px 24px rgba(22, 33, 31, 0.08);
-  transform: translateY(-2px);
-}
-
-.day-card::before {
+.planner-map-preview::before {
   position: absolute;
-  inset: 0 auto 0 0;
-  width: 4px;
-  background: var(--teal);
+  inset: 30% 15% 28% 18%;
+  border: 3px dashed rgba(11, 127, 120, 0.28);
+  border-radius: 999px;
+  transform: rotate(-9deg);
   content: "";
+  animation: routeDash 2s ease-in-out infinite;
 }
 
-.day-card h3 {
-  margin: 6px 0 12px;
+.route-dot {
+  position: absolute;
+  z-index: 1;
+  width: 16px;
+  height: 16px;
+  border: 3px solid white;
+  border-radius: 999px;
+  background: var(--teal);
+  box-shadow: 0 10px 20px rgba(11, 127, 120, 0.24);
+}
+
+.dot-a {
+  left: 20%;
+  top: 54%;
+}
+
+.dot-b {
+  left: 52%;
+  top: 34%;
+  background: var(--coral);
+}
+
+.dot-c {
+  right: 18%;
+  top: 60%;
+}
+
+.trip-result-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid #e3ebe8;
+  border-radius: 24px;
+  background:
+    linear-gradient(135deg, rgba(11, 127, 120, 0.08), transparent 58%),
+    white;
+  padding: clamp(16px, 2.4vw, 24px);
+  box-shadow: 0 20px 56px rgba(22, 33, 31, 0.08);
+}
+
+.trip-result-hero h2 {
+  margin: 0 0 6px;
+  font-size: clamp(1.35rem, 2.3vw, 2.2rem);
+  line-height: 1.1;
+}
+
+.trip-result-hero p {
+  margin-bottom: 0;
+}
+
+.trip-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.day-tabs {
+  padding: 2px 2px 8px;
+}
+
+.day-tabs button {
+  display: grid;
+  min-width: 156px;
+  min-height: 64px;
+  border-radius: 18px;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.day-tabs button span {
+  color: var(--teal-dark);
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.day-tabs button strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itinerary-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.36fr);
+  gap: 14px;
+}
+
+.day-detail,
+.trip-side {
+  border: 1px solid #e3ebe8;
+  border-radius: 24px;
+  background: white;
+  box-shadow: 0 18px 46px rgba(22, 33, 31, 0.07);
+  padding: clamp(14px, 2vw, 20px);
+}
+
+.day-detail {
+  display: grid;
+  gap: 14px;
+}
+
+.day-detail-head h3 {
+  margin: 6px 0 0;
+  font-size: clamp(1.15rem, 1.8vw, 1.55rem);
+}
+
+.time-line-list {
+  display: grid;
+  gap: 0;
 }
 
 .time-block {
+  position: relative;
   display: grid;
-  grid-template-columns: 86px minmax(0, 1fr);
-  gap: 12px;
-  border-top: 1px solid var(--line);
-  padding: 10px 0;
+  grid-template-columns: 74px minmax(0, 1fr) 28px;
+  gap: 14px;
+  border-top: 1px solid #edf2f0;
+  padding: 16px 0;
+}
+
+.time-block:first-child {
+  border-top: 0;
+}
+
+.time-block > strong {
+  color: var(--teal-dark);
+  font-size: 0.86rem;
 }
 
 .time-block h4 {
   margin: 0 0 5px;
+  font-size: 1rem;
 }
 
 .time-block p {
-  margin-bottom: 5px;
+  margin-bottom: 6px;
 }
 
 .time-block small {
   color: var(--muted);
+}
+
+.time-block > span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--mint);
+  color: var(--teal-dark);
+  font-size: 0.74rem;
+  font-weight: 850;
+}
+
+.trip-side {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.trip-side strong {
+  display: block;
+  margin: 6px 0;
+  font-size: 1.35rem;
 }
 
 .voice-console {
@@ -1884,6 +2151,7 @@ nextjs-portal * {
   }
 
   .chat-layout,
+  .planner-grid,
   .voice-grid,
   .explore-grid,
   .auth-shell {
@@ -2087,6 +2355,74 @@ nextjs-portal * {
     height: calc(100svh - 72px);
   }
 
+  .planner-grid {
+    display: block;
+    min-height: 100%;
+    height: auto;
+    overflow: visible;
+  }
+
+  .planner-form {
+    position: static;
+    height: auto;
+    gap: 10px;
+    border-right: 0;
+    border-bottom: 1px solid #ecefed;
+    padding: 14px 12px;
+  }
+
+  .timeline-panel {
+    min-height: auto;
+    overflow: visible;
+    padding: 16px 14px 28px;
+  }
+
+  .planner-empty {
+    min-height: 42vh;
+  }
+
+  .planner-form-head {
+    gap: 4px;
+  }
+
+  .planner-form-head h1 {
+    font-size: 1.65rem;
+  }
+
+  .planner-form-head p {
+    font-size: 0.88rem;
+    line-height: 1.42;
+  }
+
+  .destination-pills,
+  .interest-pills {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    overflow: visible;
+  }
+
+  .destination-pills button,
+  .interest-pills button {
+    min-width: 0;
+    min-height: 30px;
+    padding: 0 7px;
+    font-size: 0.76rem;
+  }
+
+  .trip-result-hero,
+  .timeline-head {
+    flex-direction: column;
+  }
+
+  .trip-result-actions {
+    justify-content: flex-start;
+  }
+
+  .itinerary-board {
+    grid-template-columns: 1fr;
+  }
+
   .source-drawer {
     display: none;
     position: fixed;
@@ -2105,6 +2441,7 @@ nextjs-portal * {
   .workspace-surface {
     height: auto;
     min-height: auto;
+    overflow: auto;
   }
 
   .search-strip {
@@ -2183,6 +2520,23 @@ nextjs-portal * {
 
   .time-block {
     grid-template-columns: 1fr;
+  }
+
+  .planner-compact-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .interest-pills {
+    display: none;
+  }
+
+  .day-tabs button {
+    min-width: 138px;
+  }
+
+  .time-block {
+    grid-template-columns: 64px minmax(0, 1fr) 28px;
+    gap: 10px;
   }
 
   .table-head {

@@ -97,6 +97,10 @@ function canUseOperations(role: string | null | undefined): boolean {
   return role === "editor" || role === "admin" || role === "root";
 }
 
+function isWorkspace(value: string | null): value is Workspace {
+  return value === "ask" || value === "plan" || value === "explore" || value === "trips" || value === "admin" || value === "account";
+}
+
 export default function Home() {
   const [active, setActive] = useState<Workspace>("ask");
   const [session, setSession] = useState<AuthSession | null>(null);
@@ -131,6 +135,20 @@ export default function Home() {
       setActive("ask");
     }
   }, [active, session?.user.role]);
+
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+    const requested = new URLSearchParams(window.location.search).get("workspace");
+    if (!isWorkspace(requested)) {
+      return;
+    }
+    if (requested === "admin" && !canUseOperations(session.user.role)) {
+      return;
+    }
+    setActive(requested);
+  }, [session]);
 
   function logout() {
     clearSession();
@@ -274,7 +292,7 @@ export default function Home() {
                 onOpenSources={() => setDrawerOpen(true)}
               />
             )}
-            {active === "plan" && <PlannerWorkspace accessToken={accessToken} onAuthNeeded={() => setActive("account")} />}
+            {active === "plan" && <PlannerWorkspace accessToken={accessToken} onAuthNeeded={() => setActive("account")} onOpenTrips={() => setActive("trips")} />}
             {active === "voice" && (
               <VoiceWorkspace
                 accessToken={accessToken}
@@ -781,15 +799,18 @@ function VoicePipeline({ events, recording, loading }: Readonly<{ events: readon
   );
 }
 
-function PlannerWorkspace({ accessToken, onAuthNeeded }: Readonly<{ accessToken?: string; onAuthNeeded: () => void }>) {
+function PlannerWorkspace({ accessToken, onAuthNeeded, onOpenTrips }: Readonly<{ accessToken?: string; onAuthNeeded: () => void; onOpenTrips: () => void }>) {
   const [destination, setDestination] = useState("Đà Nẵng");
   const [days, setDays] = useState(3);
   const [travelers, setTravelers] = useState(2);
   const [budget, setBudget] = useState("mid-range");
   const [interests, setInterests] = useState("biển, ẩm thực, gia đình");
+  const [selectedDay, setSelectedDay] = useState(1);
   const [itinerary, setItinerary] = useState<SavedItinerary | null>(null);
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const destinationPresets = ["Đà Nẵng", "Hội An", "Huế", "Nha Trang"];
+  const interestPresets = ["ẩm thực", "biển", "gia đình", "nghỉ dưỡng", "ít đông", "văn hóa"];
 
   async function generate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -812,6 +833,7 @@ function PlannerWorkspace({ accessToken, onAuthNeeded }: Readonly<{ accessToken?
       };
       const result = await createItineraryClient(accessToken).generate(payload);
       setItinerary(result);
+      setSelectedDay(1);
       setState("ready");
     } catch (caught) {
       setError(toErrorMessage(caught));
@@ -819,22 +841,51 @@ function PlannerWorkspace({ accessToken, onAuthNeeded }: Readonly<{ accessToken?
     }
   }
 
+  function addInterest(interest: string) {
+    const current = interests
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (!current.includes(interest)) {
+      setInterests([...current, interest].join(", "));
+    }
+  }
+
+  function copyItinerary() {
+    if (!itinerary) {
+      return;
+    }
+    const text = itinerary.plan_json.days
+      .map((day) => [`Ngày ${day.day}: ${day.theme}`, ...day.blocks.map((block) => `${block.time} - ${block.title}: ${block.description}`)].join("\n"))
+      .join("\n\n");
+    navigator.clipboard.writeText(`${itinerary.plan_json.title}\n\n${text}`).catch(() => undefined);
+  }
+
+  const selected = itinerary?.plan_json.days.find((day) => day.day === selectedDay) ?? itinerary?.plan_json.days[0] ?? null;
+  const totalBlocks = itinerary?.plan_json.days.reduce((total, day) => total + day.blocks.length, 0) ?? 0;
+
   return (
     <section className="planner-grid" aria-label="Tạo lịch trình">
       <form className="planner-form" onSubmit={generate}>
-        <div className="panel-head">
-          <div>
-            <h2>Tạo lịch trình</h2>
-            <p>Nhập vài thông tin chính, hệ thống sẽ tạo và lưu chuyến đi.</p>
-          </div>
-          <ConnectionPill active={Boolean(accessToken)} />
+        <div className="planner-form-head">
+          <span>Lịch trình</span>
+          <h1>Tạo chuyến đi nhanh</h1>
+          <p>Chọn điểm đến, số ngày và sở thích. Lịch trình tạo xong sẽ tự lưu vào tài khoản.</p>
+        </div>
+
+        <div className="destination-pills" aria-label="Gợi ý điểm đến">
+          {destinationPresets.map((preset) => (
+            <button key={preset} className={destination === preset ? "is-active" : ""} type="button" onClick={() => setDestination(preset)}>
+              {preset}
+            </button>
+          ))}
         </div>
 
         <label>
           <span>Điểm đến</span>
           <input value={destination} onChange={(event) => setDestination(event.target.value)} />
         </label>
-        <div className="form-pair">
+        <div className="planner-compact-grid">
           <label>
             <span>Số ngày</span>
             <input min={1} max={14} type="number" value={days} onChange={(event) => setDays(Number(event.target.value))} />
@@ -852,50 +903,109 @@ function PlannerWorkspace({ accessToken, onAuthNeeded }: Readonly<{ accessToken?
             <option value="premium">Thoải mái</option>
           </select>
         </label>
+        <button className="primary-button wide planner-submit-main" type="submit" disabled={state === "loading"}>
+          <Icon name="spark" />
+          {state === "loading" ? "Đang tạo" : "Tạo lịch trình"}
+        </button>
         <label>
           <span>Sở thích</span>
           <input value={interests} onChange={(event) => setInterests(event.target.value)} />
         </label>
-        <button className="primary-button wide" type="submit" disabled={state === "loading"}>
-          <Icon name="spark" />
-          {state === "loading" ? "Đang tạo" : "Tạo lịch trình"}
-        </button>
+        <div className="interest-pills" aria-label="Gợi ý sở thích">
+          {interestPresets.map((preset) => (
+            <button key={preset} type="button" onClick={() => addInterest(preset)}>
+              {preset}
+            </button>
+          ))}
+        </div>
+        {itinerary && (
+          <button className="ghost-button wide" type="button" onClick={onOpenTrips}>
+            <Icon name="bag" />
+            Xem lịch trình đã lưu
+          </button>
+        )}
         {error && <ErrorNote message={error} />}
       </form>
 
       <div className="timeline-panel">
         {!itinerary && state !== "loading" && (
-          <EmptyState title="Chưa có lịch trình" text="Kết quả thật sẽ xuất hiện ở đây sau khi tạo." />
+          <div className="planner-empty">
+            <div className="planner-map-preview" aria-hidden="true">
+              <span className="route-dot dot-a" />
+              <span className="route-dot dot-b" />
+              <span className="route-dot dot-c" />
+            </div>
+            <h2>Lịch trình sẽ hiện ở đây</h2>
+            <p>Mỗi ngày có chủ đề riêng, các điểm dừng theo thời gian, gợi ý di chuyển và trạng thái lưu.</p>
+          </div>
         )}
         {state === "loading" && <LoadingRoute />}
         {itinerary && (
           <>
-            <div className="timeline-head">
+            <div className="trip-result-hero">
               <div>
                 <h2>{itinerary.plan_json.title}</h2>
                 <p>
-                  {itinerary.destination} · {itinerary.days} ngày · {itinerary.citations.length} nguồn
+                  {itinerary.destination} · {itinerary.days} ngày · {travelers} người · {totalBlocks} hoạt động
                 </p>
               </div>
-              <span className="state-pill">Đã lưu</span>
+              <div className="trip-result-actions">
+                <span className="state-pill live">Đã lưu</span>
+                <button className="ghost-button" type="button" onClick={copyItinerary}>
+                  <Icon name="copy" />
+                  Sao chép
+                </button>
+                <button className="ghost-button" type="button" onClick={onOpenTrips}>
+                  <Icon name="bag" />
+                  Đã lưu
+                </button>
+              </div>
             </div>
-            <div className="timeline-list">
+
+            <div className="day-tabs" aria-label="Chọn ngày">
               {itinerary.plan_json.days.map((day) => (
-                <article key={day.day} className="day-card">
+                <button key={day.day} className={selected?.day === day.day ? "is-active" : ""} type="button" onClick={() => setSelectedDay(day.day)}>
                   <span>Ngày {day.day}</span>
-                  <h3>{day.theme}</h3>
-                  {day.blocks.map((block) => (
-                    <div key={`${day.day}-${block.time}-${block.title}`} className="time-block">
-                      <strong>{block.time}</strong>
-                      <div>
-                        <h4>{block.title}</h4>
-                        <p>{block.description}</p>
-                        <small>{block.route_hint}</small>
-                      </div>
-                    </div>
-                  ))}
-                </article>
+                  <strong>{day.theme}</strong>
+                </button>
               ))}
+            </div>
+
+            <div className="itinerary-board">
+              {selected && (
+                <article className="day-detail">
+                  <div className="day-detail-head">
+                    <span>Ngày {selected.day}</span>
+                    <h3>{selected.theme}</h3>
+                  </div>
+                  <div className="time-line-list">
+                    {selected.blocks.map((block, index) => (
+                      <div key={`${selected.day}-${block.time}-${block.title}`} className="time-block">
+                        <strong>{block.time}</strong>
+                        <div>
+                          <h4>{block.title}</h4>
+                          <p>{block.description}</p>
+                          <small>{block.route_hint || block.cost_estimate}</small>
+                        </div>
+                        <span aria-hidden="true">{index + 1}</span>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              )}
+
+              <aside className="trip-side">
+                <div>
+                  <span>Tóm tắt</span>
+                  <strong>{itinerary.days} ngày</strong>
+                  <p>{itinerary.citations.length} nguồn tham khảo · lưu lúc {new Date(itinerary.updated_at).toLocaleDateString("vi-VN")}</p>
+                </div>
+                <div className="mini-days">
+                  {itinerary.plan_json.days.map((day) => (
+                    <small key={day.day}>Ngày {day.day}: {day.blocks.length} điểm</small>
+                  ))}
+                </div>
+              </aside>
             </div>
           </>
         )}
