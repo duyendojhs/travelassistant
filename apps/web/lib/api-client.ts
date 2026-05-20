@@ -52,7 +52,7 @@ export class ApiClient {
     });
 
     if (!response.ok) {
-      throw await toApiError(response);
+      throw await toApiError(response, Boolean(this.accessToken));
     }
 
     return (await response.json()) as TResponse;
@@ -100,7 +100,7 @@ export class ApiClient {
     });
 
     if (!response.ok) {
-      throw await toApiError(response);
+      throw await toApiError(response, Boolean(this.accessToken));
     }
 
     if (response.status === 204) {
@@ -115,7 +115,7 @@ export function createApiClient(options?: ApiClientOptions): ApiClient {
   return new ApiClient(options);
 }
 
-async function toApiError(response: Response): Promise<ApiError> {
+async function toApiError(response: Response, hadAccessToken = false): Promise<ApiError> {
   let message = "";
   try {
     const body = (await response.json()) as { detail?: unknown; message?: unknown };
@@ -128,11 +128,15 @@ async function toApiError(response: Response): Promise<ApiError> {
     message = "";
   }
 
-  if (response.status === 401) {
+  if (response.status === 401 && hadAccessToken) {
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("travelassistant:auth-expired"));
     }
     return new ApiError(response.status, "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+  }
+
+  if (response.status === 401) {
+    return new ApiError(response.status, "Email hoặc mật khẩu không đúng.");
   }
 
   return new ApiError(response.status, message || `Không thể gọi API (${response.status}).`);
